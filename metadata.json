@@ -1,0 +1,6 @@
+{
+  "name": "Qtex Forex AI Signal Analyzer",
+  "description": "AI-powered chart and screen analyzer providing realtime Forex trading signals, indicator scoring, and data quality metrics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
