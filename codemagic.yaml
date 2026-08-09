@@ -8,9 +8,18 @@ workflows:
       java: 17
 
     scripts:
-      - name: Build Debug APK
+      - name: Install Gradle
         script: |
-          gradle assembleDebug
+          brew install gradle
+
+      - name: Generate Gradle Wrapper
+        script: |
+          gradle wrapper --gradle-version 9.3.1
+
+      - name: Build Android Debug APK
+        script: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
 
     artifacts:
       - app/build/outputs/apk/debug/*.apk
