@@ -1,7 +1,6 @@
 package com.example.ui
 
 import android.app.Application
-import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.analyzer.ChartDetector
@@ -9,7 +8,6 @@ import com.example.analyzer.SignalEngine
 import com.example.data.db.AppDatabase
 import com.example.data.db.SignalEntity
 import com.example.data.model.AnalysisResult
-import com.example.data.model.DataQuality
 import com.example.data.model.ForexPair
 import com.example.data.model.SignalType
 import com.example.repository.SignalRepository
@@ -22,7 +20,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -33,142 +30,336 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository = SignalRepository(dao)
     }
 
-    val historySignals: StateFlow<List<SignalEntity>> = repository.allItemsFlow()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val historySignals: StateFlow<List<SignalEntity>> =
+        repository.allItemsFlow()
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                emptyList()
+            )
 
-    val winCount: StateFlow<Int> = repository.winCount
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val winCount: StateFlow<Int> =
+        repository.winCount
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                0
+            )
 
-    val lossCount: StateFlow<Int> = repository.lossCount
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val lossCount: StateFlow<Int> =
+        repository.lossCount
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                0
+            )
 
-    val totalCount: StateFlow<Int> = repository.totalCount
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val totalCount: StateFlow<Int> =
+        repository.totalCount
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                0
+            )
 
-    // Capture state from Foreground Service
-    val isCaptureActive: StateFlow<Boolean> = ScreenCaptureService.isCapturing
+    /*
+     * Screen Capture state
+     */
+    val isCaptureActive: StateFlow<Boolean> =
+        ScreenCaptureService.isCapturing
 
-    // Configuration Settings
-    private val _isAnalysisPaused = MutableStateFlow(false)
-    val isAnalysisPaused: StateFlow<Boolean> = _isAnalysisPaused.asStateFlow()
+    /*
+     * Analysis settings
+     */
+    private val _isAnalysisPaused =
+        MutableStateFlow(false)
 
-    private val _analysisIntervalMs = MutableStateFlow(500L)
-    val analysisIntervalMs: StateFlow<Long> = _analysisIntervalMs.asStateFlow()
+    val isAnalysisPaused: StateFlow<Boolean> =
+        _isAnalysisPaused.asStateFlow()
 
-    private val _minConfidenceThreshold = MutableStateFlow(65)
-    val minConfidenceThreshold: StateFlow<Int> = _minConfidenceThreshold.asStateFlow()
+    private val _analysisIntervalMs =
+        MutableStateFlow(1000L)
 
-    private val _selectedMode = MutableStateFlow("QTEX") // "QTEX" or "FOREX"
-    val selectedMode: StateFlow<String> = _selectedMode.asStateFlow()
+    val analysisIntervalMs: StateFlow<Long> =
+        _analysisIntervalMs.asStateFlow()
 
-    private val _selectedPair = MutableStateFlow("EUR/USD")
-    val selectedPair: StateFlow<String> = _selectedPair.asStateFlow()
+    private val _minConfidenceThreshold =
+        MutableStateFlow(65)
 
-    private val _selectedTimeframe = MutableStateFlow("1 MIN")
-    val selectedTimeframe: StateFlow<String> = _selectedTimeframe.asStateFlow()
+    val minConfidenceThreshold: StateFlow<Int> =
+        _minConfidenceThreshold.asStateFlow()
 
-    // Current Analysis Output
-    private val _currentResult = MutableStateFlow<AnalysisResult?>(null)
-    val currentResult: StateFlow<AnalysisResult?> = _currentResult.asStateFlow()
+    private val _selectedMode =
+        MutableStateFlow("QTEX")
 
-    private val _statusMessage = MutableStateFlow("Ready for Screen Capture")
-    val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
+    val selectedMode: StateFlow<String> =
+        _selectedMode.asStateFlow()
 
-    // Price History buffer for indicator calculations
-    private val priceHistoryMap = mutableMapOf<String, MutableList<Double>>()
+    private val _selectedPair =
+        MutableStateFlow("EUR/USD")
+
+    val selectedPair: StateFlow<String> =
+        _selectedPair.asStateFlow()
+
+    private val _selectedTimeframe =
+        MutableStateFlow("1 MIN")
+
+    val selectedTimeframe: StateFlow<String> =
+        _selectedTimeframe.asStateFlow()
+
+    /*
+     * Current result
+     */
+    private val _currentResult =
+        MutableStateFlow<AnalysisResult?>(null)
+
+    val currentResult: StateFlow<AnalysisResult?> =
+        _currentResult.asStateFlow()
+
+    private val _statusMessage =
+        MutableStateFlow("Ready — Start Qtex Screen Capture")
+
+    val statusMessage: StateFlow<String> =
+        _statusMessage.asStateFlow()
+
+    /*
+     * Price history.
+     *
+     * IMPORTANT:
+     * No Random/fake market prices are generated here.
+     *
+     * Prices are added only when ChartDetector reports
+     * a detected price from the captured frame.
+     */
+    private val priceHistoryMap =
+        mutableMapOf<String, MutableList<Double>>()
+
     private var analysisJob: Job? = null
+
     private var lastSavedSignalTime = 0L
 
+    /*
+     * Supported Forex pairs
+     */
     val supportedPairs = listOf(
-        ForexPair("EUR/USD", "Euro / US Dollar", 1.17342),
-        ForexPair("GBP/USD", "British Pound / US Dollar", 1.31250),
-        ForexPair("USD/JPY", "US Dollar / Japanese Yen", 154.200),
-        ForexPair("USD/CHF", "US Dollar / Swiss Franc", 0.88450),
-        ForexPair("AUD/USD", "Australian Dollar / US Dollar", 0.65820),
-        ForexPair("USD/CAD", "US Dollar / Canadian Dollar", 1.36500),
-        ForexPair("NZD/USD", "New Zealand Dollar / US Dollar", 0.59810)
+        ForexPair(
+            "EUR/USD",
+            "Euro / US Dollar",
+            1.17342
+        ),
+        ForexPair(
+            "GBP/USD",
+            "British Pound / US Dollar",
+            1.31250
+        ),
+        ForexPair(
+            "USD/JPY",
+            "US Dollar / Japanese Yen",
+            154.200
+        ),
+        ForexPair(
+            "USD/CHF",
+            "US Dollar / Swiss Franc",
+            0.88450
+        ),
+        ForexPair(
+            "AUD/USD",
+            "Australian Dollar / US Dollar",
+            0.65820
+        ),
+        ForexPair(
+            "USD/CAD",
+            "US Dollar / Canadian Dollar",
+            1.36500
+        ),
+        ForexPair(
+            "NZD/USD",
+            "New Zealand Dollar / US Dollar",
+            0.59810
+        )
     )
 
     init {
-        // Initialize base price history for supported pairs
+        /*
+         * Create empty history.
+         *
+         * We deliberately do NOT create fake prices.
+         */
         supportedPairs.forEach { pair ->
-            val list = mutableListOf<Double>()
-            var p = pair.basePrice
-            for (i in 0..30) {
-                p += (Random.nextDouble() - 0.49) * 0.00040
-                list.add(p)
-            }
-            priceHistoryMap[pair.symbol] = list
+            priceHistoryMap[pair.symbol] =
+                mutableListOf()
         }
 
         startAnalysisLoop()
     }
 
+    /*
+     * Main analysis loop
+     */
     private fun startAnalysisLoop() {
+
         analysisJob?.cancel()
-        analysisJob = viewModelScope.launch {
-            while (true) {
-                delay(_analysisIntervalMs.value)
 
-                if (_isAnalysisPaused.value) {
-                    _statusMessage.value = "Analysis Paused"
-                    continue
-                }
+        analysisJob =
+            viewModelScope.launch {
 
-                val currentPairSymbol = _selectedPair.value
-                val history = priceHistoryMap.getOrPut(currentPairSymbol) { mutableListOf() }
+                while (true) {
 
-                // Simulate realistic price movement tick
-                val lastP = history.lastOrNull() ?: 1.17350
-                val tickChange = (Random.nextDouble() - 0.495) * 0.00018
-                val newPrice = (lastP + tickChange).coerceAtLeast(0.0001)
-                history.add(newPrice)
-                if (history.size > 100) history.removeAt(0)
+                    delay(_analysisIntervalMs.value)
 
-                val capturedBitmap: Bitmap? = ScreenCaptureService.latestFrame.value
+                    if (_isAnalysisPaused.value) {
 
-                val frameData = if (isCaptureActive.value) {
-                    _statusMessage.value = "Screen Capture Active — Analyzing Qtex chart"
-                    ChartDetector.analyzeFrame(
-                        bitmap = capturedBitmap,
-                        fallbackPair = currentPairSymbol,
-                        fallbackTimeframe = _selectedTimeframe.value,
-                        lastKnownPrice = newPrice
-                    )
-                } else {
-                    _statusMessage.value = "Live Forex Market Mode — Tap Start Screen Capture for Qtex"
-                    ChartDetector.analyzeFrame(
-                        bitmap = null,
-                        fallbackPair = currentPairSymbol,
-                        fallbackTimeframe = _selectedTimeframe.value,
-                        lastKnownPrice = newPrice
-                    )
-                }
+                        _statusMessage.value =
+                            "Analysis Paused"
 
-                val result = SignalEngine.generateSignal(
-                    frameData = frameData,
-                    priceHistory = history,
-                    minConfidenceThreshold = _minConfidenceThreshold.value,
-                    assetName = currentPairSymbol,
-                    timeframeName = _selectedTimeframe.value
-                )
+                        continue
+                    }
 
-                _currentResult.value = result
+                    /*
+                     * Qtex mode requires screen capture.
+                     */
+                    if (!isCaptureActive.value) {
 
-                // Auto-save signal to Room Database if it's an UP or DOWN signal (throttle every 12 sec)
-                val currentTime = System.currentTimeMillis()
-                if ((result.signalType == SignalType.UP || result.signalType == SignalType.DOWN) &&
-                    (currentTime - lastSavedSignalTime > 12000)
-                ) {
-                    lastSavedSignalTime = currentTime
-                    saveSignalToDb(result)
+                        _statusMessage.value =
+                            "Waiting for Qtex Screen Capture"
+
+                        continue
+                    }
+
+                    val pair =
+                        _selectedPair.value
+
+                    val timeframe =
+                        _selectedTimeframe.value
+
+                    /*
+                     * Get latest captured frame.
+                     */
+                    val bitmap =
+                        ScreenCaptureService.latestFrame.value
+
+                    if (bitmap == null) {
+
+                        _statusMessage.value =
+                            "Waiting for chart frame..."
+
+                        continue
+                    }
+
+                    /*
+                     * Analyze the actual captured screen.
+                     *
+                     * NOTE:
+                     * ChartDetector currently performs
+                     * visual/pixel analysis.
+                     */
+                    val frameData =
+                        ChartDetector.analyzeFrame(
+                            bitmap = bitmap,
+                            fallbackPair = pair,
+                            fallbackTimeframe = timeframe,
+                            lastKnownPrice = 0.0
+                        )
+
+                    /*
+                     * If chart was not detected,
+                     * do not manufacture a price.
+                     */
+                    if (!frameData.isValidChart) {
+
+                        _statusMessage.value =
+                            "WAIT — Qtex chart not detected"
+
+                        continue
+                    }
+
+                    /*
+                     * Get detected price.
+                     */
+                    val detectedPrice =
+                        frameData.detectedPrice
+
+                    if (detectedPrice == null ||
+                        detectedPrice <= 0.0
+                    ) {
+
+                        _statusMessage.value =
+                            "WAIT — Price not detected from chart"
+
+                        continue
+                    }
+
+                    /*
+                     * Add only detected price.
+                     */
+                    val history =
+                        priceHistoryMap.getOrPut(pair) {
+                            mutableListOf()
+                        }
+
+                    history.add(detectedPrice)
+
+                    /*
+                     * Keep the latest 200 observations.
+                     */
+                    if (history.size > 200) {
+                        history.removeAt(0)
+                    }
+
+                    _statusMessage.value =
+                        "Qtex chart detected — Analyzing"
+
+                    /*
+                     * Generate technical-analysis signal.
+                     */
+                    val result =
+                        SignalEngine.generateSignal(
+                            frameData = frameData,
+                            priceHistory = history,
+                            minConfidenceThreshold =
+                                _minConfidenceThreshold.value,
+                            assetName = pair,
+                            timeframeName = timeframe
+                        )
+
+                    _currentResult.value =
+                        result
+
+                    /*
+                     * Save UP / DOWN signals.
+                     *
+                     * Only save once every 12 seconds.
+                     */
+                    val now =
+                        System.currentTimeMillis()
+
+                    if (
+                        (
+                            result.signalType ==
+                                SignalType.UP ||
+                            result.signalType ==
+                                SignalType.DOWN
+                        ) &&
+                        now - lastSavedSignalTime > 12000
+                    ) {
+
+                        lastSavedSignalTime = now
+
+                        saveSignalToDb(result)
+                    }
                 }
             }
-        }
     }
 
-    private fun saveSignalToDb(result: AnalysisResult) {
+    /*
+     * Save signal to Room database.
+     */
+    private fun saveSignalToDb(
+        result: AnalysisResult
+    ) {
+
         viewModelScope.launch {
+
             repository.saveSignal(
                 SignalEntity(
                     timestamp = result.timestamp,
@@ -185,49 +376,121 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /*
+     * Pause / Resume analysis
+     */
     fun toggleAnalysisPause() {
-        _isAnalysisPaused.value = !_isAnalysisPaused.value
+
+        _isAnalysisPaused.value =
+            !_isAnalysisPaused.value
     }
 
+    /*
+     * Change analysis interval.
+     */
     fun setAnalysisInterval(ms: Long) {
-        _analysisIntervalMs.value = ms
+
+        _analysisIntervalMs.value =
+            ms.coerceIn(250L, 10000L)
+
         startAnalysisLoop()
     }
 
-    fun setMinConfidenceThreshold(threshold: Int) {
-        _minConfidenceThreshold.value = threshold.coerceIn(50, 95)
+    /*
+     * Change confidence threshold.
+     */
+    fun setMinConfidenceThreshold(
+        threshold: Int
+    ) {
+
+        _minConfidenceThreshold.value =
+            threshold.coerceIn(50, 95)
     }
 
-    fun setSelectedMode(mode: String) {
-        _selectedMode.value = mode
+    /*
+     * Change mode.
+     */
+    fun setSelectedMode(
+        mode: String
+    ) {
+
+        _selectedMode.value =
+            mode
     }
 
-    fun setSelectedPair(pair: String) {
-        _selectedPair.value = pair
+    /*
+     * Change Forex pair.
+     */
+    fun setSelectedPair(
+        pair: String
+    ) {
+
+        _selectedPair.value =
+            pair
     }
 
-    fun setSelectedTimeframe(timeframe: String) {
-        _selectedTimeframe.value = timeframe
+    /*
+     * Change timeframe.
+     */
+    fun setSelectedTimeframe(
+        timeframe: String
+    ) {
+
+        _selectedTimeframe.value =
+            timeframe
     }
 
-    fun markSignalOutcome(id: Long, outcome: String) {
+    /*
+     * Mark signal result.
+     */
+    fun markSignalOutcome(
+        id: Long,
+        outcome: String
+    ) {
+
         viewModelScope.launch {
-            repository.updateResult(id, outcome)
+
+            repository.updateResult(
+                id,
+                outcome
+            )
         }
     }
 
-    fun deleteSignal(id: Long) {
+    /*
+     * Delete one signal.
+     */
+    fun deleteSignal(
+        id: Long
+    ) {
+
         viewModelScope.launch {
+
             repository.deleteSignal(id)
         }
     }
 
+    /*
+     * Clear complete signal history.
+     */
     fun clearSignalHistory() {
+
         viewModelScope.launch {
+
             repository.clearHistory()
         }
     }
+
+    override fun onCleared() {
+
+        analysisJob?.cancel()
+
+        super.onCleared()
+    }
 }
 
-// Extension to bridge Flow in repository
-private fun SignalRepository.allItemsFlow() = allSignals
+/*
+ * Repository Flow bridge.
+ */
+private fun SignalRepository.allItemsFlow() =
+    allSignals
