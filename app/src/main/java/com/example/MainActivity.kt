@@ -21,3 +21,4 @@ val onStartCapture: () -> Unit = {
 
     screenCaptureLauncher.launch(captureIntent)
 }
+
