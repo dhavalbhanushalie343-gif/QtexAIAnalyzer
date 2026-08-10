@@ -3,15 +3,18 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.analyzer.ChartDetector
+import com.example.analyzer.ChartFrameData
 import com.example.analyzer.SignalEngine
+import com.example.analyzer.TechnicalIndicators
+import com.example.data.MarketCandle
 import com.example.data.db.AppDatabase
 import com.example.data.db.SignalEntity
 import com.example.data.model.AnalysisResult
+import com.example.data.model.DataQuality
 import com.example.data.model.ForexPair
 import com.example.data.model.SignalType
+import com.example.data.remote.MarketDataProvider
 import com.example.repository.SignalRepository
-import com.example.service.ScreenCaptureService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,11 +27,14 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: SignalRepository
+    private val marketDataProvider = MarketDataProvider()
 
     init {
         val dao = AppDatabase.getDatabase(application).signalDao()
         repository = SignalRepository(dao)
     }
+
+    // ---------------- HISTORY ----------------
 
     val historySignals: StateFlow<List<SignalEntity>> =
         repository.allItemsFlow()
@@ -39,46 +45,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
 
     val winCount: StateFlow<Int> =
-        repository.winCount
-            .stateIn(
-                viewModelScope,
-                SharingStarted.WhileSubscribed(5000),
-                0
-            )
+        repository.winCount.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
+        )
 
     val lossCount: StateFlow<Int> =
-        repository.lossCount
-            .stateIn(
-                viewModelScope,
-                SharingStarted.WhileSubscribed(5000),
-                0
-            )
+        repository.lossCount.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
+        )
 
     val totalCount: StateFlow<Int> =
-        repository.totalCount
-            .stateIn(
-                viewModelScope,
-                SharingStarted.WhileSubscribed(5000),
-                0
-            )
+        repository.totalCount.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
+        )
 
-    /*
-     * Screen Capture state
-     */
+    // ---------------- SCREEN CAPTURE ----------------
+    // फिलहाल UI compatibility के लिए रखा है।
+    // Analysis अब screen से नहीं बल्कि Market API से होगा।
+
+    private val _isCaptureActive = MutableStateFlow(false)
     val isCaptureActive: StateFlow<Boolean> =
-        ScreenCaptureService.isCapturing
+        _isCaptureActive.asStateFlow()
 
-    /*
-     * Analysis settings
-     */
+    // ---------------- SETTINGS ----------------
+
     private val _isAnalysisPaused =
         MutableStateFlow(false)
 
     val isAnalysisPaused: StateFlow<Boolean> =
         _isAnalysisPaused.asStateFlow()
 
+    /*
+     * API को हर 500ms call नहीं करना है।
+     * Twelve Data usage बचाने के लिए minimum 60 seconds रखा है।
+     */
     private val _analysisIntervalMs =
-        MutableStateFlow(1000L)
+        MutableStateFlow(60_000L)
 
     val analysisIntervalMs: StateFlow<Long> =
         _analysisIntervalMs.asStateFlow()
@@ -90,7 +98,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _minConfidenceThreshold.asStateFlow()
 
     private val _selectedMode =
-        MutableStateFlow("QTEX")
+        MutableStateFlow("FOREX")
 
     val selectedMode: StateFlow<String> =
         _selectedMode.asStateFlow()
@@ -107,9 +115,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val selectedTimeframe: StateFlow<String> =
         _selectedTimeframe.asStateFlow()
 
-    /*
-     * Current result
-     */
+    // ---------------- CURRENT RESULT ----------------
+
     private val _currentResult =
         MutableStateFlow<AnalysisResult?>(null)
 
@@ -117,30 +124,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _currentResult.asStateFlow()
 
     private val _statusMessage =
-        MutableStateFlow("Ready — Start Qtex Screen Capture")
+        MutableStateFlow("Connecting to Live Forex Market...")
 
     val statusMessage: StateFlow<String> =
         _statusMessage.asStateFlow()
 
-    /*
-     * Price history.
-     *
-     * IMPORTANT:
-     * No Random/fake market prices are generated here.
-     *
-     * Prices are added only when ChartDetector reports
-     * a detected price from the captured frame.
-     */
-    private val priceHistoryMap =
-        mutableMapOf<String, MutableList<Double>>()
-
     private var analysisJob: Job? = null
-
     private var lastSavedSignalTime = 0L
 
-    /*
-     * Supported Forex pairs
-     */
+    // ---------------- SUPPORTED PAIRS ----------------
+
     val supportedPairs = listOf(
         ForexPair(
             "EUR/USD",
@@ -180,180 +173,213 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
-        /*
-         * Create empty history.
-         *
-         * We deliberately do NOT create fake prices.
-         */
-        supportedPairs.forEach { pair ->
-            priceHistoryMap[pair.symbol] =
-                mutableListOf()
-        }
-
         startAnalysisLoop()
     }
 
-    /*
-     * Main analysis loop
-     */
+    // ============================================================
+    // LIVE MARKET ANALYSIS
+    // ============================================================
+
     private fun startAnalysisLoop() {
 
         analysisJob?.cancel()
 
-        analysisJob =
-            viewModelScope.launch {
+        analysisJob = viewModelScope.launch {
 
-                while (true) {
+            // पहला API request तुरंत
+            analyzeLiveMarket()
 
-                    delay(_analysisIntervalMs.value)
+            while (true) {
 
-                    if (_isAnalysisPaused.value) {
+                val waitTime =
+                    _analysisIntervalMs.value.coerceAtLeast(60_000L)
 
-                        _statusMessage.value =
-                            "Analysis Paused"
+                delay(waitTime)
 
-                        continue
-                    }
-
-                    /*
-                     * Qtex mode requires screen capture.
-                     */
-                    if (!isCaptureActive.value) {
-
-                        _statusMessage.value =
-                            "Waiting for Qtex Screen Capture"
-
-                        continue
-                    }
-
-                    val pair =
-                        _selectedPair.value
-
-                    val timeframe =
-                        _selectedTimeframe.value
-
-                    /*
-                     * Get latest captured frame.
-                     */
-                    val bitmap =
-                        ScreenCaptureService.latestFrame.value
-
-                    if (bitmap == null) {
-
-                        _statusMessage.value =
-                            "Waiting for chart frame..."
-
-                        continue
-                    }
-
-                    /*
-                     * Analyze the actual captured screen.
-                     *
-                     * NOTE:
-                     * ChartDetector currently performs
-                     * visual/pixel analysis.
-                     */
-                    val frameData =
-                        ChartDetector.analyzeFrame(
-                            bitmap = bitmap,
-                            fallbackPair = pair,
-                            fallbackTimeframe = timeframe,
-                            lastKnownPrice = 0.0
-                        )
-
-                    /*
-                     * If chart was not detected,
-                     * do not manufacture a price.
-                     */
-                    if (!frameData.isValidChart) {
-
-                        _statusMessage.value =
-                            "WAIT — Qtex chart not detected"
-
-                        continue
-                    }
-
-                    /*
-                     * Get detected price.
-                     */
-                    val detectedPrice =
-                        frameData.detectedPrice
-
-                    if (detectedPrice == null ||
-                        detectedPrice <= 0.0
-                    ) {
-
-                        _statusMessage.value =
-                            "WAIT — Price not detected from chart"
-
-                        continue
-                    }
-
-                    /*
-                     * Add only detected price.
-                     */
-                    val history =
-                        priceHistoryMap.getOrPut(pair) {
-                            mutableListOf()
-                        }
-
-                    history.add(detectedPrice)
-
-                    /*
-                     * Keep the latest 200 observations.
-                     */
-                    if (history.size > 200) {
-                        history.removeAt(0)
-                    }
-
+                if (_isAnalysisPaused.value) {
                     _statusMessage.value =
-                        "Qtex chart detected — Analyzing"
-
-                    /*
-                     * Generate technical-analysis signal.
-                     */
-                    val result =
-                        SignalEngine.generateSignal(
-                            frameData = frameData,
-                            priceHistory = history,
-                            minConfidenceThreshold =
-                                _minConfidenceThreshold.value,
-                            assetName = pair,
-                            timeframeName = timeframe
-                        )
-
-                    _currentResult.value =
-                        result
-
-                    /*
-                     * Save UP / DOWN signals.
-                     *
-                     * Only save once every 12 seconds.
-                     */
-                    val now =
-                        System.currentTimeMillis()
-
-                    if (
-                        (
-                            result.signalType ==
-                                SignalType.UP ||
-                            result.signalType ==
-                                SignalType.DOWN
-                        ) &&
-                        now - lastSavedSignalTime > 12000
-                    ) {
-
-                        lastSavedSignalTime = now
-
-                        saveSignalToDb(result)
-                    }
+                        "Analysis Paused"
+                    continue
                 }
+
+                analyzeLiveMarket()
             }
+        }
     }
 
-    /*
-     * Save signal to Room database.
-     */
+    private suspend fun analyzeLiveMarket() {
+
+        val pair = _selectedPair.value
+        val timeframe = _selectedTimeframe.value
+
+        try {
+
+            _statusMessage.value =
+                "Fetching live $pair market data..."
+
+            // ---------------------------------------------
+            // Get REAL candles from API
+            // ---------------------------------------------
+
+            val candles =
+                marketDataProvider.getLatestCandles(
+                    pair = pair,
+                    timeframe = timeframe,
+                    limit = 100
+                )
+
+            if (candles.isEmpty()) {
+
+                _statusMessage.value =
+                    "Live data unavailable — check API key/network"
+
+                return
+            }
+
+            if (candles.size < 15) {
+
+                _statusMessage.value =
+                    "Waiting for enough market candles..."
+
+                return
+            }
+
+            // ---------------------------------------------
+            // Convert API candles → technical candles
+            // ---------------------------------------------
+
+            val technicalCandles =
+                candles.map {
+                    TechnicalIndicators.Candle(
+                        open = it.open,
+                        high = it.high,
+                        low = it.low,
+                        close = it.close
+                    )
+                }
+
+            // ---------------------------------------------
+            // Close price history
+            // ---------------------------------------------
+
+            val priceHistory =
+                candles.map {
+                    it.close
+                }
+
+            val currentPrice =
+                candles.last().close
+
+            // ---------------------------------------------
+            // Count bullish / bearish candles
+            // ---------------------------------------------
+
+            var bullishCount = 0
+            var bearishCount = 0
+
+            candles.forEach {
+
+                when {
+                    it.close > it.open ->
+                        bullishCount++
+
+                    it.close < it.open ->
+                        bearishCount++
+                }
+            }
+
+            // ---------------------------------------------
+            // Build chart data from REAL candles
+            // ---------------------------------------------
+
+            val frameData =
+                ChartFrameData(
+                    isValidChart = true,
+
+                    dataQualityScore =
+                        if (candles.size >= 50) 95 else 80,
+
+                    dataQuality =
+                        if (candles.size >= 50)
+                            DataQuality.HIGH
+                        else
+                            DataQuality.MEDIUM,
+
+                    bullishPixelCount =
+                        bullishCount,
+
+                    bearishPixelCount =
+                        bearishCount,
+
+                    detectedPrice =
+                        currentPrice,
+
+                    detectedPair =
+                        pair,
+
+                    detectedTimeframe =
+                        timeframe,
+
+                    recentCandles =
+                        technicalCandles.takeLast(20)
+                )
+
+            // ---------------------------------------------
+            // AI / Technical Signal Engine
+            // ---------------------------------------------
+
+            val result =
+                SignalEngine.generateSignal(
+
+                    frameData = frameData,
+
+                    priceHistory =
+                        priceHistory,
+
+                    minConfidenceThreshold =
+                        _minConfidenceThreshold.value,
+
+                    assetName =
+                        pair,
+
+                    timeframeName =
+                        timeframe
+                )
+
+            _currentResult.value = result
+
+            _statusMessage.value =
+                "LIVE • $pair • $timeframe • ${candles.size} candles"
+
+            // ---------------------------------------------
+            // Save UP / DOWN signal
+            // ---------------------------------------------
+
+            val now =
+                System.currentTimeMillis()
+
+            if (
+                (result.signalType == SignalType.UP ||
+                 result.signalType == SignalType.DOWN) &&
+                now - lastSavedSignalTime > 60_000L
+            ) {
+
+                lastSavedSignalTime = now
+
+                saveSignalToDb(result)
+            }
+
+        } catch (e: Exception) {
+
+            _statusMessage.value =
+                "Market API error: ${e.message ?: "Unknown error"}"
+        }
+    }
+
+    // ============================================================
+    // DATABASE
+    // ============================================================
+
     private fun saveSignalToDb(
         result: AnalysisResult
     ) {
@@ -361,44 +387,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
 
             repository.saveSignal(
+
                 SignalEntity(
-                    timestamp = result.timestamp,
-                    asset = result.asset,
-                    price = result.price,
-                    timeframe = result.timeframe,
-                    signalType = result.signalType.name,
-                    confidence = result.confidence,
-                    reason = result.reason,
-                    dataQuality = result.dataQuality.name,
-                    userResult = "PENDING"
+
+                    timestamp =
+                        result.timestamp,
+
+                    asset =
+                        result.asset,
+
+                    price =
+                        result.price,
+
+                    timeframe =
+                        result.timeframe,
+
+                    signalType =
+                        result.signalType.name,
+
+                    confidence =
+                        result.confidence,
+
+                    reason =
+                        result.reason,
+
+                    dataQuality =
+                        result.dataQuality.name,
+
+                    userResult =
+                        "PENDING"
                 )
             )
         }
     }
 
-    /*
-     * Pause / Resume analysis
-     */
+    // ============================================================
+    // SETTINGS FUNCTIONS
+    // ============================================================
+
     fun toggleAnalysisPause() {
 
         _isAnalysisPaused.value =
             !_isAnalysisPaused.value
     }
 
-    /*
-     * Change analysis interval.
-     */
     fun setAnalysisInterval(ms: Long) {
 
+        /*
+         * API को बहुत तेजी से call करने से बचाने के लिए
+         * minimum 60 seconds.
+         */
         _analysisIntervalMs.value =
-            ms.coerceIn(250L, 10000L)
+            ms.coerceAtLeast(60_000L)
 
         startAnalysisLoop()
     }
 
-    /*
-     * Change confidence threshold.
-     */
     fun setMinConfidenceThreshold(
         threshold: Int
     ) {
@@ -407,9 +451,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             threshold.coerceIn(50, 95)
     }
 
-    /*
-     * Change mode.
-     */
     fun setSelectedMode(
         mode: String
     ) {
@@ -418,31 +459,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mode
     }
 
-    /*
-     * Change Forex pair.
-     */
     fun setSelectedPair(
         pair: String
     ) {
 
         _selectedPair.value =
             pair
+
+        // Pair बदलते ही नया data
+        viewModelScope.launch {
+            analyzeLiveMarket()
+        }
     }
 
-    /*
-     * Change timeframe.
-     */
     fun setSelectedTimeframe(
         timeframe: String
     ) {
 
         _selectedTimeframe.value =
             timeframe
+
+        // Timeframe बदलते ही नया data
+        viewModelScope.launch {
+            analyzeLiveMarket()
+        }
     }
 
-    /*
-     * Mark signal result.
-     */
+    // ============================================================
+    // HISTORY FUNCTIONS
+    // ============================================================
+
     fun markSignalOutcome(
         id: Long,
         outcome: String
@@ -457,9 +503,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /*
-     * Delete one signal.
-     */
     fun deleteSignal(
         id: Long
     ) {
@@ -470,9 +513,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /*
-     * Clear complete signal history.
-     */
     fun clearSignalHistory() {
 
         viewModelScope.launch {
@@ -489,8 +529,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
-/*
- * Repository Flow bridge.
- */
+// ================================================================
+// Repository Flow bridge
+// ================================================================
+
 private fun SignalRepository.allItemsFlow() =
     allSignals
