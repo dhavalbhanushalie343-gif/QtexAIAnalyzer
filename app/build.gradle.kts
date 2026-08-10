@@ -1,160 +1,79 @@
-import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
-
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.devtools.ksp)
-    alias(libs.plugins.roborazzi)
-    alias(libs.plugins.secrets)
-    alias(libs.plugins.google.services)
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("kotlin-kapt")
 }
 
 android {
     namespace = "com.example"
-
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.aistudio.qtexsignal.analyzer"
+        applicationId = "com.example.qtex"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner =
-            "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    signingConfigs {
-        create("release") {
-            val keystorePath =
-                System.getenv("KEYSTORE_PATH")
-                    ?: "${rootDir}/my-upload-key.jks"
-
-            storeFile = file(keystorePath)
-            storePassword = System.getenv("STORE_PASSWORD")
-            keyAlias = "upload"
-            keyPassword = System.getenv("KEY_PASSWORD")
-        }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isCrunchPngs = false
             isMinifyEnabled = false
-
             proguardFiles(
-                getDefaultProguardFile(
-                    "proguard-android-optimize.txt"
-                ),
+                getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-
-            signingConfig =
-                signingConfigs.getByName("release")
-        }
-
-        debug {
-            // Android का default debug keystore इस्तेमाल होगा
         }
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
     }
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
-    testOptions {
-        unitTests {
-            isIncludeAndroidResources = true
-        }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.1"
     }
-
-    dependenciesInfo {
-        includeInApk = false
-        includeInBundle = true
-    }
-}
-
-// Secrets Gradle Plugin
-secrets {
-    propertiesFileName = ".env"
-    defaultPropertiesFileName = ".env.example"
-    ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
-}
-
-// Google Services
-// google-services.json नहीं होने पर warning रहेगी,
-// build को इस वजह से fail नहीं किया जाएगा।
-googleServices {
-    missingGoogleServicesStrategy =
-        MissingGoogleServicesStrategy.WARN
 }
 
 dependencies {
+    // Android Core & Lifecycle
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    implementation("androidx.activity:activity-compose:1.8.2")
 
-    implementation(
-        platform(libs.androidx.compose.bom)
-    )
+    // Jetpack Compose UI
+    implementation(platform("androidx.compose:compose-bom:2023.08.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
 
-    implementation(
-        platform(libs.firebase.bom)
-    )
+    // Kotlin Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    implementation(libs.androidx.activity.compose)
+    // Room Database
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion")
 
-    implementation(
-        libs.androidx.compose.material.icons.core
-    )
+    // Google Gemini AI SDK
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
-    implementation(
-        libs.androidx.compose.material.icons.extended
-    )
-
-    implementation(
-        libs.androidx.compose.material3
-    )
-
-    implementation(
-        libs.androidx.compose.ui
-    )
-
-    implementation(
-        libs.androidx.compose.ui.graphics
-    )
-
-    implementation(
-        libs.androidx.compose.ui.tooling.preview
-    )
-
-    implementation(libs.androidx.core.ktx)
-
-    implementation(
-        libs.androidx.lifecycle.runtime.compose
-    )
-
-    implementation(
-        libs.androidx.lifecycle.runtime.ktx
-    )
-
-    implementation(
-        libs.androidx.lifecycle.viewmodel.compose
-    )
-
-    implementation(libs.androidx.room.ktx)
-
-    implementation(libs.androidx.room.runtime)
-
-    implementation(libs.converter.moshi)
-
-    implementation(libs.firebase.ai)
+    // Testing
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
