@@ -7,21 +7,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 class MarketDataProvider : MarketDataApi {
 
-    /*
-     * यहां अपनी Twelve Data API key डालो।
-     *
-     * उदाहरण:
-     * private val apiKey = "abc123456789"
-     *
-     * अपनी असली key मुझे मत भेजना।
-     */
-    private val apiKey = "PASTE_YOUR_API_KEY_HERE"
+    // अपनी Twelve Data API key यहाँ डालो
+    // API key चैट या GitHub में किसी को मत भेजना
+    private val apiKey = "YOUR_TWELVE_DATA_API_KEY"
 
     override suspend fun getLatestCandles(
         pair: String,
@@ -29,31 +20,26 @@ class MarketDataProvider : MarketDataApi {
         limit: Int
     ): List<MarketCandle> = withContext(Dispatchers.IO) {
 
-        if (apiKey == "PASTE_YOUR_API_KEY_HERE") {
-            return@withContext emptyList()
-        }
-
         try {
             val interval = when (timeframe.uppercase()) {
                 "1 MIN", "1M", "1 MINUTE" -> "1min"
                 "5 MIN", "5M" -> "5min"
                 "15 MIN", "15M" -> "15min"
                 "30 MIN", "30M" -> "30min"
-                "1 HOUR", "1H", "60 MIN" -> "1h"
+                "1 HOUR", "1H" -> "1h"
                 "4 HOUR", "4H" -> "4h"
                 "1 DAY", "1D" -> "1day"
                 else -> "1min"
             }
 
-            val encodedSymbol =
-                URLEncoder.encode(pair, "UTF-8")
+            val encodedPair = pair.replace("/", "%2F")
 
             val urlString =
                 "https://api.twelvedata.com/time_series" +
-                        "?symbol=$encodedSymbol" +
-                        "&interval=$interval" +
-                        "&outputsize=$limit" +
-                        "&apikey=$apiKey"
+                "?symbol=$encodedPair" +
+                "&interval=$interval" +
+                "&outputsize=$limit" +
+                "&apikey=$apiKey"
 
             val connection =
                 URL(urlString).openConnection() as HttpURLConnection
@@ -69,141 +55,86 @@ class MarketDataProvider : MarketDataApi {
                 return@withContext emptyList()
             }
 
-            val response =
-                connection.inputStream
-                    .bufferedReader()
-                    .use { it.readText() }
+            val response = connection.inputStream
+                .bufferedReader()
+                .use { it.readText() }
 
             connection.disconnect()
 
             val json = JSONObject(response)
 
-            if (json.has("status") &&
-                json.optString("status") == "error"
-            ) {
+            if (json.optString("status") == "error") {
                 return@withContext emptyList()
             }
 
             val values = json.optJSONArray("values")
                 ?: return@withContext emptyList()
 
-            val result = mutableListOf<MarketCandle>()
-
-            val dateFormats = listOf(
-                SimpleDateFormat(
-                    "yyyy-MM-dd HH:mm:ss",
-                    Locale.US
-                ),
-                SimpleDateFormat(
-                    "yyyy-MM-dd HH:mm",
-                    Locale.US
-                )
-            )
+            val candles = mutableListOf<MarketCandle>()
 
             for (i in values.length() - 1 downTo 0) {
+                val item = values.getJSONObject(i)
 
-                val item = values.optJSONObject(i)
-                    ?: continue
-
-                val dateText =
-                    item.optString("datetime")
-
-                var timestamp = 0L
-
-                for (format in dateFormats) {
-                    try {
-                        timestamp =
-                            format.parse(dateText)?.time ?: 0L
-
-                        if (timestamp > 0L) break
-
-                    } catch (_: Exception) {
-                    }
-                }
-
-                val open =
-                    item.optString("open").toDoubleOrNull()
-                        ?: continue
-
-                val high =
-                    item.optString("high").toDoubleOrNull()
-                        ?: continue
-
-                val low =
-                    item.optString("low").toDoubleOrNull()
-                        ?: continue
-
-                val close =
-                    item.optString("close").toDoubleOrNull()
-                        ?: continue
-
-                val volume =
-                    item.optString("volume")
-                        .toDoubleOrNull() ?: 0.0
-
-                result.add(
+                candles.add(
                     MarketCandle(
-                        timestamp = timestamp,
-                        open = open,
-                        high = high,
-                        low = low,
-                        close = close,
-                        volume = volume
+                        timestamp = System.currentTimeMillis() -
+                            ((values.length() - 1 - i) * 60_000L),
+
+                        open = item.optString("open").toDoubleOrNull() ?: 0.0,
+                        high = item.optString("high").toDoubleOrNull() ?: 0.0,
+                        low = item.optString("low").toDoubleOrNull() ?: 0.0,
+                        close = item.optString("close").toDoubleOrNull() ?: 0.0,
+                        volume = item.optString("volume")
+                            .toDoubleOrNull() ?: 0.0
                     )
                 )
             }
 
-            result
+            candles
 
         } catch (e: Exception) {
+            e.printStackTrace()
             emptyList()
         }
     }
 
-    override suspend fun getCurrentPrice(
-        pair: String
-    ): Double? = withContext(Dispatchers.IO) {
+    override suspend fun getCurrentPrice(pair: String): Double? =
+        withContext(Dispatchers.IO) {
 
-        if (apiKey == "73193e6f008f48feab3486b3676e7e16") {
-            return@withContext null
-        }
+            try {
+                val encodedPair = pair.replace("/", "%2F")
 
-        try {
+                val urlString =
+                    "https://api.twelvedata.com/price" +
+                    "?symbol=$encodedPair" +
+                    "&apikey=$apiKey"
 
-            val encodedSymbol =
-                URLEncoder.encode(pair, "UTF-8")
+                val connection =
+                    URL(urlString).openConnection() as HttpURLConnection
 
-            val urlString =
-                "https://api.twelvedata.com/price" +
-                        "?symbol=$encodedSymbol" +
-                        "&apikey=$apiKey"
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
 
-            val connection =
-                URL(urlString).openConnection() as HttpURLConnection
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                    connection.disconnect()
+                    return@withContext null
+                }
 
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
-
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                connection.disconnect()
-                return@withContext null
-            }
-
-            val response =
-                connection.inputStream
+                val response = connection.inputStream
                     .bufferedReader()
                     .use { it.readText() }
 
-            connection.disconnect()
+                connection.disconnect()
 
-            val json = JSONObject(response)
+                val json = JSONObject(response)
 
-            json.optString("price")
-                .toDoubleOrNull()
+                json.optString("price")
+                    .toDoubleOrNull()
 
-        } catch (e: Exception) {
-            null
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
         }
-    }
 }
