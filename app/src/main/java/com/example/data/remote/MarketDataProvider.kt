@@ -12,7 +12,7 @@ class MarketDataProvider : MarketDataApi {
 
     // अपनी Twelve Data API key यहाँ डालो
     // API key चैट या GitHub में किसी को मत भेजना
-    private val apiKey = "YOUR_TWELVE_DATA_API_KEY"
+    private val apiKey = "73193e6f008f48feab3486b3676e7e16"
 
     override suspend fun getLatestCandles(
         pair: String,
