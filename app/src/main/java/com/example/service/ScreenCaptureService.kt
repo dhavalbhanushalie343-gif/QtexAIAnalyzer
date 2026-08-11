@@ -37,155 +37,557 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
+    private var projectionCallback: MediaProjection.Callback? = null
+
     companion object {
+
         private const val TAG = "ScreenCaptureService"
+
         private const val CHANNEL_ID = "QtexScreenCaptureChannel"
         private const val NOTIFICATION_ID = 1001
 
-        const val ACTION_START = "com.example.service.ACTION_START"
-        const val ACTION_STOP = "com.example.service.ACTION_STOP"
-        const val EXTRA_RESULT_CODE = "EXTRA_RESULT_CODE"
-        const val EXTRA_RESULT_DATA = "EXTRA_RESULT_DATA"
+        const val ACTION_START =
+            "com.example.service.ACTION_START"
 
-        private val _latestFrame = MutableStateFlow<Bitmap?>(null)
-        val latestFrame: StateFlow<Bitmap?> = _latestFrame.asStateFlow()
+        const val ACTION_STOP =
+            "com.example.service.ACTION_STOP"
 
-        private val _isCapturing = MutableStateFlow(false)
-        val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
+        const val EXTRA_RESULT_CODE =
+            "EXTRA_RESULT_CODE"
+
+        const val EXTRA_RESULT_DATA =
+            "EXTRA_RESULT_DATA"
+
+        private val _latestFrame =
+            MutableStateFlow<Bitmap?>(null)
+
+        val latestFrame: StateFlow<Bitmap?> =
+            _latestFrame.asStateFlow()
+
+        private val _isCapturing =
+            MutableStateFlow(false)
+
+        val isCapturing: StateFlow<Boolean> =
+            _isCapturing.asStateFlow()
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder {
+        return binder
+    }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START -> {
-                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
-                @Suppress("DEPRECATION")
-                val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
 
-                if (resultCode != -1 && resultData != null) {
+        when (intent?.action) {
+
+            ACTION_START -> {
+
+                val resultCode =
+                    intent.getIntExtra(
+                        EXTRA_RESULT_CODE,
+                        -1
+                    )
+
+                @Suppress("DEPRECATION")
+                val resultData =
+                    intent.getParcelableExtra<Intent>(
+                        EXTRA_RESULT_DATA
+                    )
+
+                if (
+                    resultCode != -1 &&
+                    resultData != null
+                ) {
                     startForegroundWithNotification()
-                    startCapture(resultCode, resultData)
+
+                    startCapture(
+                        resultCode,
+                        resultData
+                    )
+                } else {
+                    Log.e(
+                        TAG,
+                        "Invalid MediaProjection permission data"
+                    )
                 }
             }
+
             ACTION_STOP -> {
+
                 stopCapture()
-                stopForeground(STOP_FOREGROUND_REMOVE)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(
+                        STOP_FOREGROUND_REMOVE
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+
                 stopSelf()
             }
         }
+
         return START_NOT_STICKY
     }
 
     private fun startForegroundWithNotification() {
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Qtex Forex AI Signal Analyzer")
-            .setContentText("Screen capture is active & analyzing chart...")
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val notification: Notification =
+            NotificationCompat.Builder(
+                this,
+                CHANNEL_ID
+            )
+                .setContentTitle(
+                    "Qtex AI Signal Analyzer"
+                )
+                .setContentText(
+                    "Screen capture is active"
+                )
+                .setSmallIcon(
+                    android.R.drawable.ic_menu_camera
+                )
+                .setOngoing(true)
+                .setPriority(
+                    NotificationCompat.PRIORITY_LOW
+                )
+                .build()
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.Q
+        ) {
+
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                ServiceInfo
+                    .FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             )
+
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification
+            )
         }
     }
 
-    private fun startCapture(resultCode: Int, data: Intent) {
-        val projectionManager =
-            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjection = projectionManager.getMediaProjection(resultCode, data)
+    private fun startCapture(
+        resultCode: Int,
+        data: Intent
+    ) {
 
-        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        windowManager.defaultDisplay.getMetrics(metrics)
+        try {
 
-        val width = metrics.widthPixels / 2 // Downsample width for efficient performance
-        val height = metrics.heightPixels / 2
-        val density = metrics.densityDpi
+            // Prevent duplicate capture sessions
+            stopCapture()
 
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        imageReader?.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage()
-            if (image != null) {
-                try {
-                    val planes = image.planes
-                    val buffer = planes[0].buffer
-                    val pixelStride = planes[0].pixelStride
-                    val rowStride = planes[0].rowStride
-                    val rowPadding = rowStride - pixelStride * width
+            val projectionManager =
+                getSystemService(
+                    Context.MEDIA_PROJECTION_SERVICE
+                ) as MediaProjectionManager
 
-                    val bitmap = Bitmap.createBitmap(
-                        width + rowPadding / pixelStride,
-                        height,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    bitmap.copyPixelsFromBuffer(buffer)
+            mediaProjection =
+                projectionManager.getMediaProjection(
+                    resultCode,
+                    data
+                )
 
-                    // Crop to exact width
-                    val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-                    _latestFrame.value = cropped
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error acquiring frame: ${e.message}")
-                } finally {
-                    image.close()
-                }
+            if (mediaProjection == null) {
+
+                Log.e(
+                    TAG,
+                    "MediaProjection could not be created"
+                )
+
+                _isCapturing.value = false
+                return
             }
-        }, null)
 
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "QtexScreenCapture",
-            width,
-            height,
-            density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface,
-            null,
-            null
-        )
+            /*
+             * Register callback before creating
+             * the VirtualDisplay.
+             */
+            projectionCallback =
+                object : MediaProjection.Callback() {
 
-        _isCapturing.value = true
+                    override fun onStop() {
+
+                        Log.d(
+                            TAG,
+                            "MediaProjection stopped"
+                        )
+
+                        stopCaptureInternal()
+                    }
+                }
+
+            mediaProjection?.registerCallback(
+                projectionCallback!!,
+                null
+            )
+
+            val windowManager =
+                getSystemService(
+                    Context.WINDOW_SERVICE
+                ) as WindowManager
+
+            val metrics =
+                DisplayMetrics()
+
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay
+                .getMetrics(metrics)
+
+            /*
+             * Capture at half resolution.
+             * This reduces CPU and memory usage.
+             */
+            val width =
+                (metrics.widthPixels / 2)
+                    .coerceAtLeast(320)
+
+            val height =
+                (metrics.heightPixels / 2)
+                    .coerceAtLeast(320)
+
+            val density =
+                metrics.densityDpi
+
+            imageReader =
+                ImageReader.newInstance(
+                    width,
+                    height,
+                    PixelFormat.RGBA_8888,
+                    2
+                )
+
+            imageReader?.setOnImageAvailableListener(
+                { reader ->
+
+                    processLatestImage(
+                        reader,
+                        width,
+                        height
+                    )
+
+                },
+                null
+            )
+
+            virtualDisplay =
+                mediaProjection?.createVirtualDisplay(
+                    "QtexScreenCapture",
+                    width,
+                    height,
+                    density,
+                    DisplayManager
+                        .VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageReader?.surface,
+                    null,
+                    null
+                )
+
+            _isCapturing.value = true
+
+            Log.d(
+                TAG,
+                "Screen capture started: ${width}x$height"
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Failed to start capture",
+                e
+            )
+
+            stopCaptureInternal()
+        }
+    }
+
+    private fun processLatestImage(
+        reader: ImageReader,
+        width: Int,
+        height: Int
+    ) {
+
+        val image =
+            try {
+                reader.acquireLatestImage()
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Could not acquire image",
+                    e
+                )
+                null
+            }
+
+        if (image == null) {
+            return
+        }
+
+        try {
+
+            val plane =
+                image.planes.firstOrNull()
+
+            if (plane == null) {
+                return
+            }
+
+            val buffer =
+                plane.buffer
+
+            val pixelStride =
+                plane.pixelStride
+
+            val rowStride =
+                plane.rowStride
+
+            val rowPadding =
+                rowStride -
+                    pixelStride * width
+
+            val bitmapWidth =
+                width +
+                    rowPadding / pixelStride
+
+            val bitmap =
+                Bitmap.createBitmap(
+                    bitmapWidth,
+                    height,
+                    Bitmap.Config.ARGB_8888
+                )
+
+            buffer.rewind()
+
+            bitmap.copyPixelsFromBuffer(
+                buffer
+            )
+
+            val cropped =
+                if (bitmapWidth != width) {
+
+                    Bitmap.createBitmap(
+                        bitmap,
+                        0,
+                        0,
+                        width,
+                        height
+                    )
+
+                } else {
+
+                    bitmap
+                }
+
+            /*
+             * Release previous frame before
+             * replacing it.
+             */
+            val previous =
+                _latestFrame.value
+
+            _latestFrame.value =
+                cropped
+
+            if (
+                previous != null &&
+                previous !== cropped &&
+                !previous.isRecycled
+            ) {
+                previous.recycle()
+            }
+
+            /*
+             * If crop created a second bitmap,
+             * release the original.
+             */
+            if (
+                cropped !== bitmap &&
+                !bitmap.isRecycled
+            ) {
+                bitmap.recycle()
+            }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Error processing screen frame",
+                e
+            )
+
+        } finally {
+
+            image.close()
+        }
     }
 
     private fun stopCapture() {
-        virtualDisplay?.release()
+
+        try {
+
+            mediaProjection?.let { projection ->
+
+                try {
+
+                    if (
+                        projectionCallback != null
+                    ) {
+
+                        projection.unregisterCallback(
+                            projectionCallback!!
+                        )
+
+                    }
+
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "Could not unregister callback",
+                        e
+                    )
+                }
+
+                try {
+                    projection.stop()
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "Could not stop projection",
+                        e
+                    )
+                }
+            }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Error stopping projection",
+                e
+            )
+        }
+
+        stopCaptureInternal()
+    }
+
+    private fun stopCaptureInternal() {
+
+        try {
+            virtualDisplay?.release()
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "VirtualDisplay release failed",
+                e
+            )
+        }
+
         virtualDisplay = null
-        imageReader?.close()
+
+        try {
+            imageReader?.setOnImageAvailableListener(
+                null,
+                null
+            )
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "Could not remove ImageReader listener",
+                e
+            )
+        }
+
+        try {
+            imageReader?.close()
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "ImageReader close failed",
+                e
+            )
+        }
+
         imageReader = null
-        mediaProjection?.stop()
+
+        projectionCallback = null
         mediaProjection = null
-        _isCapturing.value = false
+
+        val previous =
+            _latestFrame.value
+
         _latestFrame.value = null
+
+        if (
+            previous != null &&
+            !previous.isRecycled
+        ) {
+            try {
+                previous.recycle()
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "Bitmap recycle failed",
+                    e
+                )
+            }
+        }
+
+        _isCapturing.value = false
     }
 
     override fun onDestroy() {
+
         stopCapture()
+
         super.onDestroy()
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Qtex Screen Capture Service",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Notifies when screen capture analysis is running"
-            }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
+
+            val channel =
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Qtex Screen Capture Service",
+                    NotificationManager
+                        .IMPORTANCE_LOW
+                ).apply {
+
+                    description =
+                        "Shows when Qtex screen analysis is running"
+
+                    setShowBadge(false)
+                }
+
+            val manager =
+                getSystemService(
+                    Context.NOTIFICATION_SERVICE
+                ) as NotificationManager
+
+            manager.createNotificationChannel(
+                channel
+            )
         }
     }
 }
