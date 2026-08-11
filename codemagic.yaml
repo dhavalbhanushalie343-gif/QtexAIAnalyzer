@@ -6,12 +6,8 @@ workflows:
     environment:
       java: 17
     scripts:
-      - name: Setup Gradle Wrapper
-        script: |
-          gradle wrapper --gradle-version 8.7
-          chmod +x gradlew
       - name: Build Android Debug APK
         script: |
-          ./gradlew assembleDebug --stacktrace
+          gradle assembleDebug --stacktrace
     artifacts:
       - app/build/outputs/**/*.apk
