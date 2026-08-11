@@ -1,40 +1,16 @@
 workflows:
-  android-debug:
-    name: QtexAIAnalyzer Android APK
-    instance_type: mac_mini_m2
+  android-workflow:
+    name: Android Build
     max_build_duration: 30
-
+    instance_type: mac_mini_m1
     environment:
       java: 17
-
     scripts:
-      - name: Install Gradle
+      - name: Set permissions
         script: |
-          brew install gradle
-
-      - name: Generate Gradle Wrapper
-        script: |
-          gradle wrapper --gradle-version 9.3.1
-
-      - name: Generate Debug Keystore
-        script: |
-          keytool -genkeypair \
-            -v \
-            -keystore "$CM_BUILD_DIR/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
-
-          ls -l "$CM_BUILD_DIR/debug.keystore"
-
+          chmod +x gradlew
       - name: Build Android Debug APK
         script: |
-          chmod +x ./gradlew
-          ./gradlew assembleDebug
-
+          ./gradlew assembleDebug --stacktrace
     artifacts:
-      - app/build/outputs/apk/debug/*.apk
+      - app/build/outputs/**/*.apk
