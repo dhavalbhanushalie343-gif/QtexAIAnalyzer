@@ -20,12 +20,19 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Generate Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.7
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Check Gradle version
+      - name: Check Gradle
         run: ./gradlew --version
 
       - name: Build Debug APK
