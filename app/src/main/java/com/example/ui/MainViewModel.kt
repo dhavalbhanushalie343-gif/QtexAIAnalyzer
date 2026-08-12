@@ -258,7 +258,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ============================================================
-    // Qtex SCREEN ANALYSIS
+    // QTEX SCREEN ANALYSIS
     // ============================================================
 
     private fun startQtexScreenAnalysis() {
@@ -269,7 +269,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             var lastFrameTime = 0L
 
-            while (isActive &&
+            while (
+                isActive &&
                 ScreenCaptureService.isCapturing.value
             ) {
 
@@ -283,16 +284,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val now =
                             System.currentTimeMillis()
 
-                        /*
-                         * Don't analyze the same screen
-                         * hundreds of times per second.
-                         */
                         if (now - lastFrameTime >= 1000L) {
 
                             lastFrameTime = now
 
                             analyzeQtexFrame(frame)
                         }
+
                     } else {
 
                         _statusMessage.value =
@@ -319,8 +317,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     bitmap = bitmap,
                     fallbackPair = _selectedPair.value,
                     fallbackTimeframe = _selectedTimeframe.value,
-                    lastKnownPrice =
-                        getLastKnownPrice()
+                    lastKnownPrice = getLastKnownPrice()
                 )
 
             val priceHistory =
@@ -409,15 +406,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return result
     }
 
+    // ============================================================
+    // FIXED PRICE FUNCTION
+    // ============================================================
+
     private fun getLastKnownPrice(): Double {
 
-        return _currentResult.value?.price
-            ?: supportedPairs
+        val selectedPairPrice =
+            supportedPairs
                 .firstOrNull {
                     it.symbol == _selectedPair.value
                 }
                 ?.price
-            ?: 1.17350
+
+        return selectedPairPrice ?: 1.17350
     }
 
     // ============================================================
@@ -602,9 +604,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val now =
             System.currentTimeMillis()
 
-        /*
-         * Save only one signal per minute.
-         */
         if (now - lastSavedSignalTime < 60_000L) {
             return
         }
