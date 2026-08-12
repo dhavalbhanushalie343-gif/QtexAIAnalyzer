@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.qtex">
 
-    <!-- Screen capture / foreground service permissions -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Only needed if the app uses overlay features -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Foreground service -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Media projection screen capture -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- Overlay permission -->
+    <uses-permission
+        android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"
@@ -16,19 +21,24 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Light.NoTitleBar">
 
-        <!-- Main application screen -->
+        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
 
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+
+                <action
+                    android:name="android.intent.action.MAIN" />
+
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
+
             </intent-filter>
 
         </activity>
 
-        <!-- Qtex screen capture service -->
+        <!-- Screen Capture Foreground Service -->
         <service
             android:name=".service.ScreenCaptureService"
             android:enabled="true"
