@@ -27,23 +27,13 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class ScreenCaptureService : Service() {
 
-    inner class LocalBinder : Binder() {
-        fun getService(): ScreenCaptureService = this@ScreenCaptureService
-    }
-
-    private val binder = LocalBinder()
-
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
-
-    private var projectionCallback: MediaProjection.Callback? = null
-
     companion object {
 
-        private const val TAG = "ScreenCaptureService"
+        private const val TAG = "QtexScreenCapture"
 
-        private const val CHANNEL_ID = "QtexScreenCaptureChannel"
+        private const val CHANNEL_ID =
+            "QtexScreenCaptureChannel"
+
         private const val NOTIFICATION_ID = 1001
 
         const val ACTION_START =
@@ -71,13 +61,29 @@ class ScreenCaptureService : Service() {
             _isCapturing.asStateFlow()
     }
 
-    override fun onBind(intent: Intent?): IBinder {
-        return binder
+    inner class LocalBinder : Binder() {
+        fun getService(): ScreenCaptureService {
+            return this@ScreenCaptureService
+        }
     }
+
+    private val binder = LocalBinder()
+
+    private var mediaProjection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var imageReader: ImageReader? = null
+    private var projectionCallback: MediaProjection.Callback? = null
 
     override fun onCreate() {
         super.onCreate()
+
         createNotificationChannel()
+
+        Log.d(TAG, "Service created")
+    }
+
+    override fun onBind(intent: Intent?): IBinder {
+        return binder
     }
 
     override fun onStartCommand(
@@ -96,42 +102,45 @@ class ScreenCaptureService : Service() {
                         -1
                     )
 
-                @Suppress("DEPRECATION")
                 val resultData =
-                    intent.getParcelableExtra<Intent>(
-                        EXTRA_RESULT_DATA
-                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(
+                            EXTRA_RESULT_DATA,
+                            Intent::class.java
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra<Intent>(
+                            EXTRA_RESULT_DATA
+                        )
+                    }
 
                 if (
                     resultCode != -1 &&
                     resultData != null
                 ) {
-                    startForegroundWithNotification()
+
+                    startForegroundServiceNotification()
 
                     startCapture(
                         resultCode,
                         resultData
                     )
+
                 } else {
+
                     Log.e(
                         TAG,
-                        "Invalid MediaProjection permission data"
+                        "Invalid MediaProjection permission"
                     )
+
+                    stopSelf()
                 }
             }
 
             ACTION_STOP -> {
 
                 stopCapture()
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(
-                        STOP_FOREGROUND_REMOVE
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
 
                 stopSelf()
             }
@@ -140,7 +149,7 @@ class ScreenCaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startForegroundWithNotification() {
+    private fun startForegroundServiceNotification() {
 
         val notification: Notification =
             NotificationCompat.Builder(
@@ -151,7 +160,7 @@ class ScreenCaptureService : Service() {
                     "Qtex AI Signal Analyzer"
                 )
                 .setContentText(
-                    "Screen capture is active"
+                    "Screen chart analysis is active"
                 )
                 .setSmallIcon(
                     android.R.drawable.ic_menu_camera
@@ -185,13 +194,15 @@ class ScreenCaptureService : Service() {
 
     private fun startCapture(
         resultCode: Int,
-        data: Intent
+        permissionData: Intent
     ) {
 
         try {
 
-            // Prevent duplicate capture sessions
-            stopCapture()
+            /*
+             * Always clean the previous session first.
+             */
+            stopCaptureInternal()
 
             val projectionManager =
                 getSystemService(
@@ -201,24 +212,21 @@ class ScreenCaptureService : Service() {
             mediaProjection =
                 projectionManager.getMediaProjection(
                     resultCode,
-                    data
+                    permissionData
                 )
 
             if (mediaProjection == null) {
 
                 Log.e(
                     TAG,
-                    "MediaProjection could not be created"
+                    "MediaProjection is null"
                 )
 
                 _isCapturing.value = false
+
                 return
             }
 
-            /*
-             * Register callback before creating
-             * the VirtualDisplay.
-             */
             projectionCallback =
                 object : MediaProjection.Callback() {
 
@@ -248,19 +256,21 @@ class ScreenCaptureService : Service() {
 
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay
-                .getMetrics(metrics)
+                .getRealMetrics(metrics)
 
             /*
-             * Capture at half resolution.
-             * This reduces CPU and memory usage.
+             * Half-resolution capture.
+             *
+             * This is much lighter on the phone
+             * than capturing the complete screen.
              */
             val width =
                 (metrics.widthPixels / 2)
-                    .coerceAtLeast(320)
+                    .coerceAtLeast(360)
 
             val height =
                 (metrics.heightPixels / 2)
-                    .coerceAtLeast(320)
+                    .coerceAtLeast(640)
 
             val density =
                 metrics.densityDpi
@@ -288,29 +298,40 @@ class ScreenCaptureService : Service() {
 
             virtualDisplay =
                 mediaProjection?.createVirtualDisplay(
-                    "QtexScreenCapture",
+                    "QtexAIAnalyzer",
                     width,
                     height,
                     density,
-                    DisplayManager
-                        .VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                     imageReader?.surface,
                     null,
                     null
                 )
 
+            if (virtualDisplay == null) {
+
+                Log.e(
+                    TAG,
+                    "VirtualDisplay creation failed"
+                )
+
+                stopCaptureInternal()
+
+                return
+            }
+
             _isCapturing.value = true
 
             Log.d(
                 TAG,
-                "Screen capture started: ${width}x$height"
+                "Capture started: ${width}x$height"
             )
 
         } catch (e: Exception) {
 
             Log.e(
                 TAG,
-                "Failed to start capture",
+                "Capture start failed",
                 e
             )
 
@@ -328,11 +349,13 @@ class ScreenCaptureService : Service() {
             try {
                 reader.acquireLatestImage()
             } catch (e: Exception) {
+
                 Log.e(
                     TAG,
-                    "Could not acquire image",
+                    "Image acquisition failed",
                     e
                 )
+
                 null
             }
 
@@ -358,6 +381,13 @@ class ScreenCaptureService : Service() {
             val rowStride =
                 plane.rowStride
 
+            if (
+                pixelStride <= 0 ||
+                rowStride <= 0
+            ) {
+                return
+            }
+
             val rowPadding =
                 rowStride -
                     pixelStride * width
@@ -379,16 +409,23 @@ class ScreenCaptureService : Service() {
                 buffer
             )
 
-            val cropped =
+            val frame =
                 if (bitmapWidth != width) {
 
-                    Bitmap.createBitmap(
-                        bitmap,
-                        0,
-                        0,
-                        width,
-                        height
-                    )
+                    val cropped =
+                        Bitmap.createBitmap(
+                            bitmap,
+                            0,
+                            0,
+                            width,
+                            height
+                        )
+
+                    if (!bitmap.isRecycled) {
+                        bitmap.recycle()
+                    }
+
+                    cropped
 
                 } else {
 
@@ -396,39 +433,33 @@ class ScreenCaptureService : Service() {
                 }
 
             /*
-             * Release previous frame before
-             * replacing it.
+             * Replace the previous frame safely.
              */
             val previous =
                 _latestFrame.value
 
-            _latestFrame.value =
-                cropped
-
-            if (
-                previous != null &&
-                previous !== cropped &&
-                !previous.isRecycled
-            ) {
-                previous.recycle()
-            }
+            _latestFrame.value = frame
 
             /*
-             * If crop created a second bitmap,
-             * release the original.
+             * Release old frame.
              */
             if (
-                cropped !== bitmap &&
-                !bitmap.isRecycled
+                previous != null &&
+                previous !== frame &&
+                !previous.isRecycled
             ) {
-                bitmap.recycle()
+
+                try {
+                    previous.recycle()
+                } catch (_: Exception) {
+                }
             }
 
         } catch (e: Exception) {
 
             Log.e(
                 TAG,
-                "Error processing screen frame",
+                "Frame processing failed",
                 e
             )
 
@@ -444,34 +475,19 @@ class ScreenCaptureService : Service() {
 
             mediaProjection?.let { projection ->
 
-                try {
+                projectionCallback?.let { callback ->
 
-                    if (
-                        projectionCallback != null
-                    ) {
-
+                    try {
                         projection.unregisterCallback(
-                            projectionCallback!!
+                            callback
                         )
-
+                    } catch (_: Exception) {
                     }
-
-                } catch (e: Exception) {
-                    Log.w(
-                        TAG,
-                        "Could not unregister callback",
-                        e
-                    )
                 }
 
                 try {
                     projection.stop()
-                } catch (e: Exception) {
-                    Log.w(
-                        TAG,
-                        "Could not stop projection",
-                        e
-                    )
+                } catch (_: Exception) {
                 }
             }
 
@@ -479,24 +495,34 @@ class ScreenCaptureService : Service() {
 
             Log.e(
                 TAG,
-                "Error stopping projection",
+                "Projection stop error",
                 e
             )
         }
 
         stopCaptureInternal()
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.N
+        ) {
+
+            stopForeground(
+                STOP_FOREGROUND_REMOVE
+            )
+
+        } else {
+
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
     }
 
     private fun stopCaptureInternal() {
 
         try {
             virtualDisplay?.release()
-        } catch (e: Exception) {
-            Log.w(
-                TAG,
-                "VirtualDisplay release failed",
-                e
-            )
+        } catch (_: Exception) {
         }
 
         virtualDisplay = null
@@ -506,22 +532,12 @@ class ScreenCaptureService : Service() {
                 null,
                 null
             )
-        } catch (e: Exception) {
-            Log.w(
-                TAG,
-                "Could not remove ImageReader listener",
-                e
-            )
+        } catch (_: Exception) {
         }
 
         try {
             imageReader?.close()
-        } catch (e: Exception) {
-            Log.w(
-                TAG,
-                "ImageReader close failed",
-                e
-            )
+        } catch (_: Exception) {
         }
 
         imageReader = null
@@ -538,25 +554,19 @@ class ScreenCaptureService : Service() {
             previous != null &&
             !previous.isRecycled
         ) {
+
             try {
                 previous.recycle()
-            } catch (e: Exception) {
-                Log.w(
-                    TAG,
-                    "Bitmap recycle failed",
-                    e
-                )
+            } catch (_: Exception) {
             }
         }
 
         _isCapturing.value = false
-    }
 
-    override fun onDestroy() {
-
-        stopCapture()
-
-        super.onDestroy()
+        Log.d(
+            TAG,
+            "Capture stopped"
+        )
     }
 
     private fun createNotificationChannel() {
@@ -569,13 +579,13 @@ class ScreenCaptureService : Service() {
             val channel =
                 NotificationChannel(
                     CHANNEL_ID,
-                    "Qtex Screen Capture Service",
+                    "Qtex Screen Capture",
                     NotificationManager
                         .IMPORTANCE_LOW
                 ).apply {
 
                     description =
-                        "Shows when Qtex screen analysis is running"
+                        "Shows when Qtex chart analysis is active"
 
                     setShowBadge(false)
                 }
@@ -589,5 +599,12 @@ class ScreenCaptureService : Service() {
                 channel
             )
         }
+    }
+
+    override fun onDestroy() {
+
+        stopCapture()
+
+        super.onDestroy()
     }
 }
