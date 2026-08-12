@@ -24,7 +24,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.3.1'
+          gradle-version: '8.2'
 
       - name: Make gradlew executable
         run: chmod +x gradlew || true
@@ -36,7 +36,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: QtexAIAnalyzer-debug
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            **/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
