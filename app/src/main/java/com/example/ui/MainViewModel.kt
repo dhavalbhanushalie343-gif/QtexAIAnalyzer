@@ -38,19 +38,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val marketDataProvider = MarketDataProvider()
 
     init {
-        try {
-            val dao = AppDatabase
-                .getDatabase(application)
-                .signalDao()
 
-            repository = SignalRepository(dao)
+        try {
+
+            val dao =
+                AppDatabase
+                    .getDatabase(application)
+                    .signalDao()
+
+            repository =
+                SignalRepository(dao)
+
         } catch (e: Exception) {
+
             e.printStackTrace()
         }
 
         startScreenCaptureObserver()
 
         viewModelScope.launch {
+
             delay(1000)
 
             if (!ScreenCaptureService.isCapturing.value) {
@@ -65,45 +72,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val historySignals: StateFlow<List<SignalEntity>> =
         if (::repository.isInitialized) {
+
             repository.allSignals.stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5000),
                 emptyList()
             )
+
         } else {
+
             MutableStateFlow(emptyList())
         }
 
     val winCount: StateFlow<Int> =
         if (::repository.isInitialized) {
+
             repository.winCount.stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5000),
                 0
             )
+
         } else {
+
             MutableStateFlow(0)
         }
 
     val lossCount: StateFlow<Int> =
         if (::repository.isInitialized) {
+
             repository.lossCount.stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5000),
                 0
             )
+
         } else {
+
             MutableStateFlow(0)
         }
 
     val totalCount: StateFlow<Int> =
         if (::repository.isInitialized) {
+
             repository.totalCount.stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5000),
                 0
             )
+
         } else {
+
             MutableStateFlow(0)
         }
 
@@ -165,7 +184,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _currentResult.asStateFlow()
 
     private val _statusMessage =
-        MutableStateFlow("Connecting to Live Forex Market...")
+        MutableStateFlow(
+            "Connecting to Live Forex Market..."
+        )
 
     val statusMessage: StateFlow<String> =
         _statusMessage.asStateFlow()
@@ -175,6 +196,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ============================================================
 
     private var analysisJob: Job? = null
+
     private var screenAnalysisJob: Job? = null
 
     private var lastSavedSignalTime = 0L
@@ -183,43 +205,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // SUPPORTED FOREX PAIRS
     // ============================================================
 
-    val supportedPairs = listOf(
-        ForexPair(
-            "EUR/USD",
-            "Euro / US Dollar",
-            1.17342
-        ),
-        ForexPair(
-            "GBP/USD",
-            "British Pound / US Dollar",
-            1.31250
-        ),
-        ForexPair(
-            "USD/JPY",
-            "US Dollar / Japanese Yen",
-            154.200
-        ),
-        ForexPair(
-            "USD/CHF",
-            "US Dollar / Swiss Franc",
-            0.88450
-        ),
-        ForexPair(
-            "AUD/USD",
-            "Australian Dollar / US Dollar",
-            0.65820
-        ),
-        ForexPair(
-            "USD/CAD",
-            "US Dollar / Canadian Dollar",
-            1.36500
-        ),
-        ForexPair(
-            "NZD/USD",
-            "New Zealand Dollar / US Dollar",
-            0.59810
+    val supportedPairs =
+        listOf(
+
+            ForexPair(
+                "EUR/USD",
+                "Euro / US Dollar",
+                1.17342
+            ),
+
+            ForexPair(
+                "GBP/USD",
+                "British Pound / US Dollar",
+                1.31250
+            ),
+
+            ForexPair(
+                "USD/JPY",
+                "US Dollar / Japanese Yen",
+                154.200
+            ),
+
+            ForexPair(
+                "USD/CHF",
+                "US Dollar / Swiss Franc",
+                0.88450
+            ),
+
+            ForexPair(
+                "AUD/USD",
+                "Australian Dollar / US Dollar",
+                0.65820
+            ),
+
+            ForexPair(
+                "USD/CAD",
+                "US Dollar / Canadian Dollar",
+                1.36500
+            ),
+
+            ForexPair(
+                "NZD/USD",
+                "New Zealand Dollar / US Dollar",
+                0.59810
+            )
         )
-    )
 
     // ============================================================
     // SCREEN CAPTURE OBSERVER
@@ -229,31 +259,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         screenAnalysisJob?.cancel()
 
-        screenAnalysisJob = viewModelScope.launch {
+        screenAnalysisJob =
+            viewModelScope.launch {
 
-            ScreenCaptureService.isCapturing
-                .collectLatest { active ->
+                ScreenCaptureService
+                    .isCapturing
+                    .collectLatest { active ->
 
-                    if (active) {
+                        if (active) {
 
-                        _statusMessage.value =
-                            "Qtex screen capture active — analyzing chart..."
+                            _statusMessage.value =
+                                "Qtex screen capture active — analyzing chart..."
 
-                        startQtexScreenAnalysis()
+                            startQtexScreenAnalysis()
 
-                    } else {
+                        } else {
 
-                        stopQtexScreenAnalysis()
+                            stopQtexScreenAnalysis()
 
-                        _statusMessage.value =
-                            "Live Forex mode — waiting for market data..."
+                            _statusMessage.value =
+                                "Live Forex mode — waiting for market data..."
 
-                        if (!_isAnalysisPaused.value) {
-                            analyzeLiveMarket()
+                            if (!_isAnalysisPaused.value) {
+                                analyzeLiveMarket()
+                            }
                         }
                     }
-                }
-        }
+            }
     }
 
     // ============================================================
@@ -264,43 +296,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         analysisJob?.cancel()
 
-        analysisJob = viewModelScope.launch {
+        analysisJob =
+            viewModelScope.launch {
 
-            var lastFrameTime = 0L
+                var lastFrameTime = 0L
 
-            while (
-                isActive &&
-                ScreenCaptureService.isCapturing.value
-            ) {
+                while (
+                    isActive &&
+                    ScreenCaptureService.isCapturing.value
+                ) {
 
-                if (!_isAnalysisPaused.value) {
+                    if (!_isAnalysisPaused.value) {
 
-                    val frame =
-                        ScreenCaptureService.latestFrame.value
+                        val frame =
+                            ScreenCaptureService
+                                .latestFrame
+                                .value
 
-                    if (frame != null) {
+                        if (frame != null) {
 
-                        val now =
-                            System.currentTimeMillis()
+                            val now =
+                                System.currentTimeMillis()
 
-                        if (now - lastFrameTime >= 1000L) {
+                            if (
+                                now - lastFrameTime >= 1000L
+                            ) {
 
-                            lastFrameTime = now
+                                lastFrameTime = now
 
-                            analyzeQtexFrame(frame)
+                                analyzeQtexFrame(frame)
+                            }
+
+                        } else {
+
+                            _statusMessage.value =
+                                "Waiting for Qtex screen frame..."
                         }
-
-                    } else {
-
-                        _statusMessage.value =
-                            "Waiting for Qtex screen frame..."
                     }
-                }
 
-                delay(250L)
+                    delay(250L)
+                }
             }
-        }
     }
+
+    // ============================================================
+    // ANALYZE QTEX FRAME
+    // ============================================================
 
     private suspend fun analyzeQtexFrame(
         bitmap: android.graphics.Bitmap
@@ -315,12 +356,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ChartDetector.analyzeFrame(
                     bitmap = bitmap,
                     fallbackPair = _selectedPair.value,
-                    fallbackTimeframe = _selectedTimeframe.value,
-                    lastKnownPrice = getLastKnownPrice()
+                    fallbackTimeframe =
+                        _selectedTimeframe.value,
+                    lastKnownPrice =
+                        getLastKnownPrice()
                 )
 
             val priceHistory =
-                buildPriceHistoryFromFrame(frameData)
+                buildPriceHistoryFromFrame(
+                    frameData
+                )
 
             val result =
                 SignalEngine.generateSignal(
@@ -336,12 +381,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             ?: _selectedTimeframe.value
                 )
 
-            _currentResult.value = result
+            _currentResult.value =
+                result
 
             _statusMessage.value =
-                if (frameData.dataQuality == DataQuality.LOW) {
+                if (
+                    frameData.dataQuality ==
+                    DataQuality.LOW
+                ) {
+
                     "Qtex chart detected — data quality LOW"
+
                 } else {
+
                     "Qtex LIVE • ${result.asset} • ${result.timeframe}"
                 }
 
@@ -352,7 +404,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             e.printStackTrace()
 
             _statusMessage.value =
-                "Qtex analysis error: ${e.message ?: "Unknown error"}"
+                "Qtex analysis error: ${
+                    e.message ?: "Unknown error"
+                }"
         }
     }
 
@@ -365,19 +419,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): List<Double> {
 
         val prices =
-            frameData.recentCandles.map {
-                it.close
-            }
+            frameData
+                .recentCandles
+                .map {
+                    it.close
+                }
 
         return if (prices.size >= 15) {
+
             prices
+
         } else {
+
             generateFallbackPriceHistory(
                 frameData.detectedPrice
                     ?: getLastKnownPrice()
             )
         }
     }
+
+    // ============================================================
+    // FALLBACK PRICE HISTORY
+    // ============================================================
 
     private fun generateFallbackPriceHistory(
         currentPrice: Double
@@ -393,9 +456,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val movement =
                 when {
-                    i % 5 == 0 -> 0.00020
-                    i % 3 == 0 -> -0.00010
-                    else -> 0.00005
+
+                    i % 5 == 0 ->
+                        0.00020
+
+                    i % 3 == 0 ->
+                        -0.00010
+
+                    else ->
+                        0.00005
                 }
 
             price += movement
@@ -407,60 +476,93 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ============================================================
-    // FIXED PRICE FUNCTION
+    // FIXED LAST KNOWN PRICE
     // ============================================================
 
     private fun getLastKnownPrice(): Double {
 
-        val selectedPairPrice =
-            supportedPairs
-                .firstOrNull {
-                    it.symbol == _selectedPair.value
-                }
-                ?.price
+        return when (_selectedPair.value) {
 
-        return selectedPairPrice ?: 1.17350
+            "EUR/USD" ->
+                1.17342
+
+            "GBP/USD" ->
+                1.31250
+
+            "USD/JPY" ->
+                154.200
+
+            "USD/CHF" ->
+                0.88450
+
+            "AUD/USD" ->
+                0.65820
+
+            "USD/CAD" ->
+                1.36500
+
+            "NZD/USD" ->
+                0.59810
+
+            else ->
+                1.17350
+        }
     }
 
     // ============================================================
-    // FOREX LIVE MARKET ANALYSIS
+    // FOREX LIVE MARKET ANALYSIS LOOP
     // ============================================================
 
     private fun startForexAnalysisLoop() {
 
         analysisJob?.cancel()
 
-        analysisJob = viewModelScope.launch {
-
-            analyzeLiveMarket()
-
-            while (isActive) {
-
-                delay(
-                    _analysisIntervalMs.value
-                        .coerceAtLeast(60_000L)
-                )
-
-                if (_isAnalysisPaused.value) {
-
-                    _statusMessage.value =
-                        "Analysis Paused"
-
-                    continue
-                }
-
-                if (ScreenCaptureService.isCapturing.value) {
-                    continue
-                }
+        analysisJob =
+            viewModelScope.launch {
 
                 analyzeLiveMarket()
+
+                while (isActive) {
+
+                    delay(
+                        _analysisIntervalMs.value
+                            .coerceAtLeast(60_000L)
+                    )
+
+                    if (_isAnalysisPaused.value) {
+
+                        _statusMessage.value =
+                            "Analysis Paused"
+
+                        continue
+                    }
+
+                    if (
+                        ScreenCaptureService
+                            .isCapturing
+                            .value
+                    ) {
+
+                        continue
+                    }
+
+                    analyzeLiveMarket()
+                }
             }
-        }
     }
+
+    // ============================================================
+    // LIVE FOREX MARKET ANALYSIS
+    // ============================================================
 
     private suspend fun analyzeLiveMarket() {
 
-        if (ScreenCaptureService.isCapturing.value) {
+        if (
+            ScreenCaptureService
+                .isCapturing
+                .value
+        ) {
+
             return
         }
 
@@ -498,6 +600,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
 
+            // ====================================================
+            // TECHNICAL CANDLES
+            // ====================================================
+
             val technicalCandles =
                 candles.map {
 
@@ -509,6 +615,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
+            // ====================================================
+            // PRICE HISTORY
+            // ====================================================
+
             val priceHistory =
                 candles.map {
                     it.close
@@ -517,7 +627,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val currentPrice =
                 candles.last().close
 
+            // ====================================================
+            // CANDLE DIRECTION
+            // ====================================================
+
             var bullishCount = 0
+
             var bearishCount = 0
 
             candles.forEach {
@@ -532,44 +647,83 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+            // ====================================================
+            // FRAME DATA
+            // ====================================================
+
             val frameData =
                 ChartFrameData(
+
                     isValidChart = true,
+
                     dataQualityScore =
-                        if (candles.size >= 50) 95 else 80,
+                        if (candles.size >= 50)
+                            95
+                        else
+                            80,
+
                     dataQuality =
                         if (candles.size >= 50)
                             DataQuality.HIGH
                         else
                             DataQuality.MEDIUM,
+
                     bullishPixelCount =
                         bullishCount,
+
                     bearishPixelCount =
                         bearishCount,
+
                     detectedPrice =
                         currentPrice,
+
                     detectedPair =
                         pair,
+
                     detectedTimeframe =
                         timeframe,
+
                     recentCandles =
-                        technicalCandles.takeLast(20)
+                        technicalCandles
+                            .takeLast(20)
                 )
+
+            // ====================================================
+            // SIGNAL ENGINE
+            // ====================================================
 
             val result =
                 SignalEngine.generateSignal(
-                    frameData = frameData,
-                    priceHistory = priceHistory,
+
+                    frameData =
+                        frameData,
+
+                    priceHistory =
+                        priceHistory,
+
                     minConfidenceThreshold =
                         _minConfidenceThreshold.value,
-                    assetName = pair,
-                    timeframeName = timeframe
+
+                    assetName =
+                        pair,
+
+                    timeframeName =
+                        timeframe
                 )
 
-            _currentResult.value = result
+            // ====================================================
+            // UPDATE UI
+            // ====================================================
+
+            _currentResult.value =
+                result
 
             _statusMessage.value =
                 "LIVE • $pair • $timeframe • ${candles.size} candles"
+
+            // ====================================================
+            // SAVE SIGNAL
+            // ====================================================
 
             saveSignalIfNeeded(result)
 
@@ -578,7 +732,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             e.printStackTrace()
 
             _statusMessage.value =
-                "Market API error: ${e.message ?: "Unknown error"}"
+                "Market API error: ${
+                    e.message ?: "Unknown error"
+                }"
         }
     }
 
@@ -598,42 +754,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             result.signalType != SignalType.UP &&
             result.signalType != SignalType.DOWN
         ) {
+
             return
         }
 
         val now =
             System.currentTimeMillis()
 
-        if (now - lastSavedSignalTime < 60_000L) {
+        if (
+            now - lastSavedSignalTime <
+            60_000L
+        ) {
+
             return
         }
 
-        lastSavedSignalTime = now
+        lastSavedSignalTime =
+            now
 
         viewModelScope.launch {
 
             try {
 
                 repository.saveSignal(
+
                     SignalEntity(
+
                         timestamp =
                             result.timestamp,
+
                         timestampMillis =
                             now,
+
                         asset =
                             result.asset,
+
                         price =
                             result.price,
+
                         timeframe =
                             result.timeframe,
+
                         signalType =
                             result.signalType.name,
+
                         confidence =
                             result.confidence,
+
                         reason =
                             result.reason,
+
                         dataQuality =
                             result.dataQuality.name,
+
                         userResult =
                             "PENDING"
                     )
@@ -647,7 +820,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ============================================================
-    // SETTINGS
+    // TOGGLE PAUSE
     // ============================================================
 
     fun toggleAnalysisPause() {
@@ -663,13 +836,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
 
             _statusMessage.value =
-                if (ScreenCaptureService.isCapturing.value) {
+                if (
+                    ScreenCaptureService
+                        .isCapturing
+                        .value
+                ) {
+
                     "Qtex screen analysis resumed"
+
                 } else {
+
                     "Forex analysis resumed"
                 }
         }
     }
+
+    // ============================================================
+    // ANALYSIS INTERVAL
+    // ============================================================
 
     fun setAnalysisInterval(
         ms: Long
@@ -678,18 +862,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _analysisIntervalMs.value =
             ms.coerceAtLeast(60_000L)
 
-        if (!ScreenCaptureService.isCapturing.value) {
+        if (
+            !ScreenCaptureService
+                .isCapturing
+                .value
+        ) {
+
             startForexAnalysisLoop()
         }
     }
+
+    // ============================================================
+    // CONFIDENCE THRESHOLD
+    // ============================================================
 
     fun setMinConfidenceThreshold(
         threshold: Int
     ) {
 
         _minConfidenceThreshold.value =
-            threshold.coerceIn(50, 95)
+            threshold.coerceIn(
+                50,
+                95
+            )
     }
+
+    // ============================================================
+    // MODE
+    // ============================================================
 
     fun setSelectedMode(
         mode: String
@@ -698,6 +898,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedMode.value =
             mode
     }
+
+    // ============================================================
+    // SELECT FOREX PAIR
+    // ============================================================
 
     fun setSelectedPair(
         pair: String
@@ -708,7 +912,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
 
-            if (ScreenCaptureService.isCapturing.value) {
+            if (
+                ScreenCaptureService
+                    .isCapturing
+                    .value
+            ) {
 
                 _statusMessage.value =
                     "Qtex mode • $pair selected"
@@ -720,87 +928,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ============================================================
+    // SELECT TIMEFRAME
+    // ============================================================
+
     fun setSelectedTimeframe(
         timeframe: String
     ) {
 
         _selectedTimeframe.value =
             timeframe
-
-        viewModelScope.launch {
-
-            if (ScreenCaptureService.isCapturing.value) {
-
-                _statusMessage.value =
-                    "Qtex mode • $timeframe selected"
-
-            } else {
-
-                analyzeLiveMarket()
-            }
-        }
-    }
-
-    // ============================================================
-    // HISTORY
-    // ============================================================
-
-    fun markSignalOutcome(
-        id: Long,
-        outcome: String
-    ) {
-
-        if (!::repository.isInitialized) {
-            return
-        }
-
-        viewModelScope.launch {
-            repository.updateResult(
-                id,
-                outcome
-            )
-        }
-    }
-
-    fun deleteSignal(
-        id: Long
-    ) {
-
-        if (!::repository.isInitialized) {
-            return
-        }
-
-        viewModelScope.launch {
-            repository.deleteSignal(id)
-        }
-    }
-
-    fun clearSignalHistory() {
-
-        if (!::repository.isInitialized) {
-            return
-        }
-
-        viewModelScope.launch {
-            repository.clearHistory()
-        }
-    }
-
-    // ============================================================
-    // CLEANUP
-    // ============================================================
-
-    private fun stopQtexScreenAnalysis() {
-
-        analysisJob?.cancel()
-        analysisJob = null
-    }
-
-    override fun onCleared() {
-
-        analysisJob?.cancel()
-        screenAnalysisJob?.cancel()
-
-        super.onCleared()
-    }
-}
