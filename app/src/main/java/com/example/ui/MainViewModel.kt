@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.analyzer.ChartDetector
@@ -27,9 +28,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class MainViewModel(
-    application: Application
-) : AndroidViewModel(application) {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ============================================================
     // DATABASE
@@ -37,41 +36,26 @@ class MainViewModel(
 
     private lateinit var repository: SignalRepository
 
-    private val marketDataProvider =
-        MarketDataProvider()
-
-    // ============================================================
-    // INITIALIZATION
-    // ============================================================
+    private val marketDataProvider = MarketDataProvider()
 
     init {
-
         try {
+            val dao = AppDatabase
+                .getDatabase(application)
+                .signalDao()
 
-            val dao =
-                AppDatabase
-                    .getDatabase(application)
-                    .signalDao()
-
-            repository =
-                SignalRepository(dao)
+            repository = SignalRepository(dao)
 
         } catch (e: Exception) {
-
             e.printStackTrace()
         }
 
         startScreenCaptureObserver()
 
         viewModelScope.launch {
+            delay(1000)
 
-            delay(1000L)
-
-            if (
-                !ScreenCaptureService
-                    .isCapturing
-                    .value
-            ) {
+            if (!ScreenCaptureService.isCapturing.value) {
                 startForexAnalysisLoop()
             }
         }
@@ -83,57 +67,45 @@ class MainViewModel(
 
     val historySignals: StateFlow<List<SignalEntity>> =
         if (::repository.isInitialized) {
-
             repository.allSignals.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 emptyList()
             )
-
         } else {
-
             MutableStateFlow(emptyList())
         }
 
     val winCount: StateFlow<Int> =
         if (::repository.isInitialized) {
-
             repository.winCount.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 0
             )
-
         } else {
-
             MutableStateFlow(0)
         }
 
     val lossCount: StateFlow<Int> =
         if (::repository.isInitialized) {
-
             repository.lossCount.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 0
             )
-
         } else {
-
             MutableStateFlow(0)
         }
 
     val totalCount: StateFlow<Int> =
         if (::repository.isInitialized) {
-
             repository.totalCount.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 0
             )
-
         } else {
-
             MutableStateFlow(0)
         }
 
@@ -216,51 +188,43 @@ class MainViewModel(
     // SUPPORTED FOREX PAIRS
     // ============================================================
 
-    val supportedPairs =
-        listOf(
-
-            ForexPair(
-                "EUR/USD",
-                "Euro / US Dollar",
-                1.17342
-            ),
-
-            ForexPair(
-                "GBP/USD",
-                "British Pound / US Dollar",
-                1.31250
-            ),
-
-            ForexPair(
-                "USD/JPY",
-                "US Dollar / Japanese Yen",
-                154.200
-            ),
-
-            ForexPair(
-                "USD/CHF",
-                "US Dollar / Swiss Franc",
-                0.88450
-            ),
-
-            ForexPair(
-                "AUD/USD",
-                "Australian Dollar / US Dollar",
-                0.65820
-            ),
-
-            ForexPair(
-                "USD/CAD",
-                "US Dollar / Canadian Dollar",
-                1.36500
-            ),
-
-            ForexPair(
-                "NZD/USD",
-                "New Zealand Dollar / US Dollar",
-                0.59810
-            )
+    val supportedPairs = listOf(
+        ForexPair(
+            "EUR/USD",
+            "Euro / US Dollar",
+            1.17342
+        ),
+        ForexPair(
+            "GBP/USD",
+            "British Pound / US Dollar",
+            1.31250
+        ),
+        ForexPair(
+            "USD/JPY",
+            "US Dollar / Japanese Yen",
+            154.200
+        ),
+        ForexPair(
+            "USD/CHF",
+            "US Dollar / Swiss Franc",
+            0.88450
+        ),
+        ForexPair(
+            "AUD/USD",
+            "Australian Dollar / US Dollar",
+            0.65820
+        ),
+        ForexPair(
+            "USD/CAD",
+            "US Dollar / Canadian Dollar",
+            1.36500
+        ),
+        ForexPair(
+            "NZD/USD",
+            "New Zealand Dollar / US Dollar",
+            0.59810
         )
+    )
 
     // ============================================================
     // SCREEN CAPTURE OBSERVER
@@ -288,12 +252,10 @@ class MainViewModel(
 
                             stopQtexScreenAnalysis()
 
-                            _statusMessage.value =
-                                "Live Forex mode — waiting for market data..."
+                            if (!_isAnalysisPaused.value) {
+                                _statusMessage.value =
+                                    "Live Forex mode — waiting for market data..."
 
-                            if (
-                                !_isAnalysisPaused.value
-                            ) {
                                 analyzeLiveMarket()
                             }
                         }
@@ -316,14 +278,10 @@ class MainViewModel(
 
                 while (
                     isActive &&
-                    ScreenCaptureService
-                        .isCapturing
-                        .value
+                    ScreenCaptureService.isCapturing.value
                 ) {
 
-                    if (
-                        !_isAnalysisPaused.value
-                    ) {
+                    if (!_isAnalysisPaused.value) {
 
                         val frame =
                             ScreenCaptureService
@@ -336,16 +294,12 @@ class MainViewModel(
                                 System.currentTimeMillis()
 
                             if (
-                                now - lastFrameTime >=
-                                1000L
+                                now - lastFrameTime >= 1000L
                             ) {
 
-                                lastFrameTime =
-                                    now
+                                lastFrameTime = now
 
-                                analyzeQtexFrame(
-                                    frame
-                                )
+                                analyzeQtexFrame(frame)
                             }
 
                         } else {
@@ -365,7 +319,7 @@ class MainViewModel(
     // ============================================================
 
     private suspend fun analyzeQtexFrame(
-        bitmap: android.graphics.Bitmap
+        bitmap: Bitmap
     ) {
 
         try {
@@ -376,8 +330,7 @@ class MainViewModel(
             val frameData =
                 ChartDetector.analyzeFrame(
                     bitmap = bitmap,
-                    fallbackPair =
-                        _selectedPair.value,
+                    fallbackPair = _selectedPair.value,
                     fallbackTimeframe =
                         _selectedTimeframe.value,
                     lastKnownPrice =
@@ -447,9 +400,7 @@ class MainViewModel(
                     it.close
                 }
 
-        return if (
-            prices.size >= 15
-        ) {
+        return if (prices.size >= 15) {
 
             prices
 
@@ -505,9 +456,7 @@ class MainViewModel(
 
     private fun getLastKnownPrice(): Double {
 
-        return when (
-            _selectedPair.value
-        ) {
+        return when (_selectedPair.value) {
 
             "EUR/USD" ->
                 1.17342
@@ -536,7 +485,7 @@ class MainViewModel(
     }
 
     // ============================================================
-    // FOREX LIVE ANALYSIS LOOP
+    // FOREX LIVE MARKET ANALYSIS LOOP
     // ============================================================
 
     private fun startForexAnalysisLoop() {
@@ -546,21 +495,18 @@ class MainViewModel(
         analysisJob =
             viewModelScope.launch {
 
-                analyzeLiveMarket()
+                if (!_isAnalysisPaused.value) {
+                    analyzeLiveMarket()
+                }
 
                 while (isActive) {
 
                     delay(
-                        _analysisIntervalMs
-                            .value
-                            .coerceAtLeast(
-                                60_000L
-                            )
+                        _analysisIntervalMs.value
+                            .coerceAtLeast(60_000L)
                     )
 
-                    if (
-                        _isAnalysisPaused.value
-                    ) {
+                    if (_isAnalysisPaused.value) {
 
                         _statusMessage.value =
                             "Analysis Paused"
@@ -596,9 +542,7 @@ class MainViewModel(
             return
         }
 
-        if (
-            _isAnalysisPaused.value
-        ) {
+        if (_isAnalysisPaused.value) {
             return
         }
 
@@ -614,16 +558,13 @@ class MainViewModel(
                 "Fetching live $pair market data..."
 
             val candles =
-                marketDataProvider
-                    .getLatestCandles(
-                        pair = pair,
-                        timeframe = timeframe,
-                        limit = 100
-                    )
+                marketDataProvider.getLatestCandles(
+                    pair = pair,
+                    timeframe = timeframe,
+                    limit = 100
+                )
 
-            if (
-                candles.isEmpty()
-            ) {
+            if (candles.isEmpty()) {
 
                 _statusMessage.value =
                     "Live data unavailable — check API/network"
@@ -631,9 +572,7 @@ class MainViewModel(
                 return
             }
 
-            if (
-                candles.size < 15
-            ) {
+            if (candles.size < 15) {
 
                 _statusMessage.value =
                     "Waiting for enough market candles..."
@@ -673,7 +612,6 @@ class MainViewModel(
             // ====================================================
 
             var bullishCount = 0
-
             var bearishCount = 0
 
             candles.forEach {
@@ -695,26 +633,19 @@ class MainViewModel(
             val frameData =
                 ChartFrameData(
 
-                    isValidChart =
-                        true,
+                    isValidChart = true,
 
                     dataQualityScore =
-                        if (
-                            candles.size >= 50
-                        ) {
+                        if (candles.size >= 50)
                             95
-                        } else {
-                            80
-                        },
+                        else
+                            80,
 
                     dataQuality =
-                        if (
-                            candles.size >= 50
-                        ) {
+                        if (candles.size >= 50)
                             DataQuality.HIGH
-                        } else {
-                            DataQuality.MEDIUM
-                        },
+                        else
+                            DataQuality.MEDIUM,
 
                     bullishPixelCount =
                         bullishCount,
@@ -750,8 +681,7 @@ class MainViewModel(
                         priceHistory,
 
                     minConfidenceThreshold =
-                        _minConfidenceThreshold
-                            .value,
+                        _minConfidenceThreshold.value,
 
                     assetName =
                         pair,
@@ -762,7 +692,7 @@ class MainViewModel(
 
             // ====================================================
             // UPDATE UI
-            // ====================================================
+            // ============================================================
 
             _currentResult.value =
                 result
@@ -772,7 +702,7 @@ class MainViewModel(
 
             // ====================================================
             // SAVE SIGNAL
-            // ====================================================
+            // ============================================================
 
             saveSignalIfNeeded(result)
 
@@ -795,17 +725,13 @@ class MainViewModel(
         result: AnalysisResult
     ) {
 
-        if (
-            !::repository.isInitialized
-        ) {
+        if (!::repository.isInitialized) {
             return
         }
 
         if (
-            result.signalType !=
-            SignalType.UP &&
-            result.signalType !=
-            SignalType.DOWN
+            result.signalType != SignalType.UP &&
+            result.signalType != SignalType.DOWN
         ) {
             return
         }
@@ -879,32 +805,31 @@ class MainViewModel(
         _isAnalysisPaused.value =
             !_isAnalysisPaused.value
 
-        if (
-            _isAnalysisPaused.value
-        ) {
+        if (_isAnalysisPaused.value) {
 
             _statusMessage.value =
                 "Analysis Paused"
 
         } else {
 
-            _statusMessage.value =
-                if (
-                    ScreenCaptureService
-                        .isCapturing
-                        .value
-                ) {
+            if (
+                ScreenCaptureService
+                    .isCapturing
+                    .value
+            ) {
 
+                _statusMessage.value =
                     "Qtex screen analysis resumed"
 
-                } else {
+            } else {
 
+                _statusMessage.value =
                     "Forex analysis resumed"
 
-                    viewModelScope.launch {
-                        analyzeLiveMarket()
-                    }
+                viewModelScope.launch {
+                    analyzeLiveMarket()
                 }
+            }
         }
     }
 
@@ -956,6 +881,21 @@ class MainViewModel(
 
         _selectedMode.value =
             mode
+
+        if (mode == "FOREX") {
+
+            if (
+                !ScreenCaptureService
+                    .isCapturing
+                    .value &&
+                !_isAnalysisPaused.value
+            ) {
+
+                viewModelScope.launch {
+                    analyzeLiveMarket()
+                }
+            }
+        }
     }
 
     // ============================================================
@@ -982,7 +922,9 @@ class MainViewModel(
 
             } else {
 
-                analyzeLiveMarket()
+                if (!_isAnalysisPaused.value) {
+                    analyzeLiveMarket()
+                }
             }
         }
     }
@@ -1011,13 +953,15 @@ class MainViewModel(
 
             } else {
 
-                analyzeLiveMarket()
+                if (!_isAnalysisPaused.value) {
+                    analyzeLiveMarket()
+                }
             }
         }
     }
 
     // ============================================================
-    // MARK SIGNAL OUTCOME
+    // HISTORY - MARK OUTCOME
     // ============================================================
 
     fun markSignalOutcome(
@@ -1025,9 +969,7 @@ class MainViewModel(
         outcome: String
     ) {
 
-        if (
-            !::repository.isInitialized
-        ) {
+        if (!::repository.isInitialized) {
             return
         }
 
@@ -1055,9 +997,7 @@ class MainViewModel(
         id: Long
     ) {
 
-        if (
-            !::repository.isInitialized
-        ) {
+        if (!::repository.isInitialized) {
             return
         }
 
@@ -1075,14 +1015,12 @@ class MainViewModel(
     }
 
     // ============================================================
-    // CLEAR HISTORY
+    // CLEAR SIGNAL HISTORY
     // ============================================================
 
     fun clearSignalHistory() {
 
-        if (
-            !::repository.isInitialized
-        ) {
+        if (!::repository.isInitialized) {
             return
         }
 
@@ -1100,7 +1038,7 @@ class MainViewModel(
     }
 
     // ============================================================
-    // STOP QTEX ANALYSIS
+    // STOP QTEX SCREEN ANALYSIS
     // ============================================================
 
     private fun stopQtexScreenAnalysis() {
