@@ -1,7 +1,6 @@
 package com.example.ui
 
 import android.app.Application
-import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.analyzer.ChartDetector
@@ -45,7 +44,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .signalDao()
 
             repository = SignalRepository(dao)
-
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -53,7 +51,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startScreenCaptureObserver()
 
         viewModelScope.launch {
-            delay(1000L)
+            delay(1000)
 
             if (!ScreenCaptureService.isCapturing.value) {
                 startForexAnalysisLoop()
@@ -69,7 +67,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (::repository.isInitialized) {
             repository.allSignals.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 emptyList()
             )
         } else {
@@ -80,7 +78,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (::repository.isInitialized) {
             repository.winCount.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 0
             )
         } else {
@@ -91,7 +89,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (::repository.isInitialized) {
             repository.lossCount.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 0
             )
         } else {
@@ -102,7 +100,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (::repository.isInitialized) {
             repository.totalCount.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5000L),
+                SharingStarted.WhileSubscribed(5000),
                 0
             )
         } else {
@@ -247,11 +245,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                         stopQtexScreenAnalysis()
 
-                        if (!_isAnalysisPaused.value) {
-                            _statusMessage.value =
-                                "Live Forex mode — waiting for market data..."
+                        _statusMessage.value =
+                            "Live Forex mode — waiting for market data..."
 
-                            startForexAnalysisLoop()
+                        if (!_isAnalysisPaused.value) {
+                            analyzeLiveMarket()
                         }
                     }
                 }
@@ -305,7 +303,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun analyzeQtexFrame(
-        bitmap: Bitmap
+        bitmap: android.graphics.Bitmap
     ) {
 
         try {
@@ -381,36 +379,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ============================================================
-    // FALLBACK PRICE HISTORY
-    // ============================================================
-
     private fun generateFallbackPriceHistory(
         currentPrice: Double
     ): List<Double> {
 
-        val result = mutableListOf<Double>()
+        val result =
+            mutableListOf<Double>()
 
-        var current = currentPrice - 0.0020
+        var price =
+            currentPrice - 0.0020
 
         for (i in 0 until 30) {
 
-            val movement = when {
-                i % 5 == 0 -> 0.00020
-                i % 3 == 0 -> -0.00010
-                else -> 0.00005
-            }
+            val movement =
+                when {
+                    i % 5 == 0 -> 0.00020
+                    i % 3 == 0 -> -0.00010
+                    else -> 0.00005
+                }
 
-            current += movement
+            price += movement
 
-            result.add(current)
+            result.add(price)
         }
 
         return result
     }
 
     // ============================================================
-    // LAST KNOWN PRICE
+    // FIXED PRICE FUNCTION
     // ============================================================
 
     private fun getLastKnownPrice(): Double {
@@ -426,22 +423,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ============================================================
-    // FOREX LIVE MARKET ANALYSIS LOOP
+    // FOREX LIVE MARKET ANALYSIS
     // ============================================================
 
     private fun startForexAnalysisLoop() {
-
-        if (ScreenCaptureService.isCapturing.value) {
-            return
-        }
 
         analysisJob?.cancel()
 
         analysisJob = viewModelScope.launch {
 
-            if (!_isAnalysisPaused.value) {
-                analyzeLiveMarket()
-            }
+            analyzeLiveMarket()
 
             while (isActive) {
 
@@ -467,17 +458,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ============================================================
-    // FOREX MARKET ANALYSIS
-    // ============================================================
-
     private suspend fun analyzeLiveMarket() {
 
         if (ScreenCaptureService.isCapturing.value) {
-            return
-        }
-
-        if (_isAnalysisPaused.value) {
             return
         }
 
@@ -540,8 +523,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             candles.forEach {
 
                 when {
-                    it.close > it.open -> bullishCount++
-                    it.close < it.open -> bearishCount++
+
+                    it.close > it.open ->
+                        bullishCount++
+
+                    it.close < it.open ->
+                        bearishCount++
                 }
             }
 
@@ -551,11 +538,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     dataQualityScore =
                         if (candles.size >= 50) 95 else 80,
                     dataQuality =
-                        if (candles.size >= 50) {
+                        if (candles.size >= 50)
                             DataQuality.HIGH
-                        } else {
-                            DataQuality.MEDIUM
-                        },
+                        else
+                            DataQuality.MEDIUM,
                     bullishPixelCount =
                         bullishCount,
                     bearishPixelCount =
@@ -629,35 +615,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
 
                 repository.saveSignal(
-
                     SignalEntity(
                         timestamp =
                             result.timestamp,
-
                         timestampMillis =
                             now,
-
                         asset =
                             result.asset,
-
                         price =
                             result.price,
-
                         timeframe =
                             result.timeframe,
-
                         signalType =
                             result.signalType.name,
-
                         confidence =
                             result.confidence,
-
                         reason =
                             result.reason,
-
                         dataQuality =
                             result.dataQuality.name,
-
                         userResult =
                             "PENDING"
                     )
@@ -684,9 +660,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusMessage.value =
                 "Analysis Paused"
 
-            analysisJob?.cancel()
-            analysisJob = null
-
         } else {
 
             _statusMessage.value =
@@ -695,12 +668,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     "Forex analysis resumed"
                 }
-
-            if (ScreenCaptureService.isCapturing.value) {
-                startQtexScreenAnalysis()
-            } else {
-                startForexAnalysisLoop()
-            }
         }
     }
 
@@ -711,9 +678,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _analysisIntervalMs.value =
             ms.coerceAtLeast(60_000L)
 
-        if (!ScreenCaptureService.isCapturing.value &&
-            !_isAnalysisPaused.value
-        ) {
+        if (!ScreenCaptureService.isCapturing.value) {
             startForexAnalysisLoop()
         }
     }
@@ -748,7 +713,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _statusMessage.value =
                     "Qtex mode • $pair selected"
 
-            } else if (!_isAnalysisPaused.value) {
+            } else {
 
                 analyzeLiveMarket()
             }
@@ -769,7 +734,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _statusMessage.value =
                     "Qtex mode • $timeframe selected"
 
-            } else if (!_isAnalysisPaused.value) {
+            } else {
 
                 analyzeLiveMarket()
             }
@@ -790,15 +755,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-
-            try {
-                repository.updateResult(
-                    id,
-                    outcome
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            repository.updateResult(
+                id,
+                outcome
+            )
         }
     }
 
@@ -811,12 +771,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-
-            try {
-                repository.deleteSignal(id)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            repository.deleteSignal(id)
         }
     }
 
@@ -827,12 +782,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-
-            try {
-                repository.clearHistory()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            repository.clearHistory()
         }
     }
 
