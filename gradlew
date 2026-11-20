@@ -10,4 +10,4 @@ else
     JAVACMD=java
 fi
 
-exec "$JAVACMD" -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"
+exec "$JAVACMD" -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"@$);)3):('ka}}{}=}{{{}=}€{✓}°}™¢}{™{^{™¢^}^{{™`{^=¥÷°^}®]¢®=™} shhhhvsmgi 
